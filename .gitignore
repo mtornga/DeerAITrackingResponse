@@ -231,4 +231,4 @@ outputs/
 
 # But keep structure files
 !data/README.md
-!models/config.yaml
+!models/config.yaml.DS_Store
