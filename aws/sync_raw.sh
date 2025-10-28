@@ -1,0 +1,1 @@
+aws s3 sync ./data/raw s3://wildlife-ugv/raw --exclude "*.tmp"
