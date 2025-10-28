@@ -35,3 +35,5 @@ WYZE_TABLETOP_RTSP="rtsp://user:password@camera-ip/live"
 ```
 
 Scripts will read this variable automatically; override it via CLI flags when needed.
+
+Project artifacts are now in the s3 bucket wildlife-ugv on us-east-2
