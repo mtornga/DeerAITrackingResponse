@@ -1,4 +1,4 @@
-import argparse, collections, time, csv, os, sys
+import argparse, collections, time, csv, json, os, sys
 import cv2
 import numpy as np
 from pathlib import Path
@@ -32,7 +32,7 @@ MODEL_PATH = "runs/detect/train4/weights/best.pt"
 
 # 2) Map/world size in real units (e.g., feet)
 WORLD_W_FT = 3   # width of your property (X)
-WORLD_H_FT = 4   # height of your property (Y)
+WORLD_H_FT = 3   # height of your property (Y)
 
 # 3) Canvas (pixels) for the 2D map view (matches background image size)
 CANVAS_W = 865
@@ -88,6 +88,19 @@ def build_homography(image_pts, world_pts):
     if H is None:
         raise RuntimeError("Homography could not be computed. Check your points.")
     return H
+
+
+def load_calibration_matrix(path: str) -> np.ndarray:
+    """
+    Load a precomputed image->world calibration matrix from JSON.
+    """
+    data = json.loads(Path(path).read_text())
+    matrix = np.asarray(data.get("matrix"), dtype=np.float32)
+    if matrix.shape == (2, 3):
+        matrix = np.vstack([matrix, np.array([0.0, 0.0, 1.0], dtype=np.float32)])
+    if matrix.shape != (3, 3):
+        raise ValueError(f"Calibration matrix must be 3x3, got shape {matrix.shape}")
+    return matrix
 
 def project_points(H, pts_xy):
     # pts_xy: Nx2 pixels -> Nx2 world
@@ -174,10 +187,18 @@ def main():
     ap.add_argument("--iou", type=float, default=IOU_THR, help="NMS IoU threshold")
     ap.add_argument("--imgsz", type=int, default=1280, help="Inference image size (pixels)")
     ap.add_argument("--max_det", type=int, default=300, help="Max detections per frame")
+    ap.add_argument("--calibration", default="", help="Optional JSON file with image->world matrix.")
     args = ap.parse_args()
 
     # Homography (image -> world)
-    H = build_homography(IMAGE_POINTS, WORLD_POINTS)
+    if args.calibration:
+        try:
+            H = load_calibration_matrix(args.calibration)
+            print(f"[info] Loaded calibration matrix from {args.calibration}")
+        except Exception as exc:
+            raise SystemExit(f"Failed to load calibration from {args.calibration}: {exc}") from exc
+    else:
+        H = build_homography(IMAGE_POINTS, WORLD_POINTS)
 
     # Model + capture
     model = YOLO(args.model)

@@ -1,0 +1,58 @@
+{
+  "type": "affine",
+  "image": "/Users/marktornga/Documents/DeerAITrackingResponse/TableTopSimulation/datasets/raw/Alien_Maggie/images/20251028_181933.jpg",
+  "model": "/Users/marktornga/Documents/DeerAITrackingResponse/runs/detect/train4/weights/best.pt",
+  "anchors": {
+    "alien_maggie": {
+      "image_bottom_center": [
+        512.772705078125,
+        753.3239135742188
+      ],
+      "confidence": 0.648976743221283,
+      "world_feet": [
+        0.625,
+        1.2708333333333333
+      ]
+    },
+    "cutebot": {
+      "image_bottom_center": [
+        961.8012084960938,
+        676.516845703125
+      ],
+      "confidence": 0.9091609716415405,
+      "world_feet": [
+        1.0625,
+        1.0625
+      ]
+    },
+    "horse": {
+      "image_bottom_center": [
+        563.8367919921875,
+        478.5815124511719
+      ],
+      "confidence": 0.06444334983825684,
+      "world_feet": [
+        0.3333333333333333,
+        0.3333333333333333
+      ]
+    }
+  },
+  "matrix": [
+    [
+      0.0011938696305884445,
+      0.0012834950771033597,
+      -0.9540712945242051
+    ],
+    [
+      0.00012364357304698012,
+      0.003435267989596042,
+      -1.3804372024457903
+    ],
+    [
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "notes": "Affine matrix maps image pixel bottom-centers to world feet coordinates."
+}
