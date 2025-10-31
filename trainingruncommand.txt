@@ -1,0 +1,1 @@
+yolo detect train data=cvat/ultraYOLODetection1/data.yaml model=yolov8n.pt epochs=15 project=runs/detect name=ultraYOLODetection1_v1

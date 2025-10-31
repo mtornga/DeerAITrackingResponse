@@ -11,6 +11,7 @@ import datetime
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -35,7 +36,7 @@ from env_loader import load_env_file, require_env  # noqa: E402
 load_env_file()
 DEFAULT_STREAM = os.getenv("WYZE_TABLETOP_RTSP")
 DEFAULT_DURATION = 15  # seconds
-DEFAULT_OUTPUT = Path("TableTopSimulation/CVAT_inputs")
+DEFAULT_OUTPUT = Path("/Users/marktornga/Movies/CVAT_clips")
 
 
 def capture_clip(stream_url: str, duration: int, output_dir: Path, overwrite: bool) -> Path:
@@ -63,6 +64,7 @@ def capture_clip(stream_url: str, duration: int, output_dir: Path, overwrite: bo
         str(destination),
     ]
 
+    time.sleep(2)
     result = subprocess.run(cmd, check=False)
     if result.returncode != 0:
         raise RuntimeError(f"ffmpeg failed creating clip at {destination}")

@@ -228,7 +228,9 @@ __marimo__/
 data/
 models/
 outputs/
-
+cvat/
+runs/
+logs/
 # But keep structure files
 !data/README.md
 !models/config.yaml.DS_Store

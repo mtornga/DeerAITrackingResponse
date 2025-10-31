@@ -28,7 +28,8 @@ DEFAULT_RTSP = os.getenv("WYZE_TABLETOP_RTSP")
 
 # ---------------------- CONFIG (EDIT THESE) ----------------------
 # 1) Camera RTSP and YOLO model
-MODEL_PATH = "runs/detect/train4/weights/best.pt"
+MODEL_PATH = "runs/detect/ultraYOLODetection1_v13/weights/best.pt"
+
 
 # 2) Map/world size in real units (e.g., feet)
 WORLD_W_FT = 3   # width of your property (X)
@@ -67,15 +68,22 @@ WORLD_POINTS = np.array([
 
 # Optional: filter to specific classes (names in your model)
 KEEP_CLASSES = {"horse", "alien_maggie", "cutebot"}  # empty set = keep all
+SINGLETON_CLASSES = {"cutebot"}  # classes expected to appear at most once
 CONF_THR = 0.2
 IOU_THR  = 0.45
 TRAIL_LEN = 60  # points per track in world space
 SAVE_EVENTS_CSV = "detections_world.csv"  # set to "" to disable
 # ---------------------------------------------------------------
+MAX_RECONNECT_ATTEMPTS = 5
+RECONNECT_WAIT_SEC = 2.0
 
 
-def color_for_id(i: int):
-    np.random.seed(i)
+def color_for_id(identifier):
+    if isinstance(identifier, str):
+        seed = abs(hash(identifier)) % (2**32)
+    else:
+        seed = int(identifier)
+    np.random.seed(seed)
     return tuple(int(x) for x in np.random.randint(80, 255, size=3))
 
 def bottom_center(xyxy):
@@ -207,6 +215,7 @@ def main():
     cap = cv2.VideoCapture(rtsp_source)
     if not cap.isOpened():
         raise SystemExit(f"Could not open source: {rtsp_source}")
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
     # Map writer (optional)
     writer = None
@@ -231,10 +240,25 @@ def main():
     frame_interval = 0 if args.fps_cap <= 0 else 1.0 / args.fps_cap
     print("[info] Running. Press q to quit.")
 
+    reconnect_failures = 0
+
     while True:
         ok, frame = cap.read()
         if not ok:
-            break
+            reconnect_failures += 1
+            print(f"[warn] Video capture read failed ({reconnect_failures}/{MAX_RECONNECT_ATTEMPTS}); attempting reconnect.")
+            cap.release()
+            time.sleep(RECONNECT_WAIT_SEC)
+            cap = cv2.VideoCapture(rtsp_source)
+            if not cap.isOpened():
+                print("[error] Reconnect attempt failed: unable to reopen source.")
+                break
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            if reconnect_failures >= MAX_RECONNECT_ATTEMPTS:
+                print("[error] Maximum reconnect attempts exceeded; stopping tracker loop.")
+                break
+            continue
+        reconnect_failures = 0
 
         now = time.time()
         if frame_interval and now < next_tick:
@@ -275,32 +299,60 @@ def main():
             ids   = res.boxes.id
             ids   = ids.cpu().numpy().astype(int) if ids is not None else np.full(len(boxes), -1)
 
+            detections = []
             for (xyxy, c, s, tid) in zip(boxes, cls, conf, ids):
                 name = model.names.get(int(c), str(c))
                 if KEEP_CLASSES and name not in KEEP_CLASSES:
                     continue
 
-                # Draw bbox on video
-                x1, y1, x2, y2 = map(int, xyxy)
-                col = color_for_id(int(tid) if tid >= 0 else c)
-                cv2.rectangle(annotated, (x1, y1), (x2, y2), col, 2)
-                label = f"{name}#{tid} {s:.2f}" if tid >= 0 else f"{name} {s:.2f}"
-                cv2.putText(annotated, label, (x1, max(20, y1-6)),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, col, 2, cv2.LINE_AA)
+                track_key = tid if tid >= 0 else f"{name}_det"
+                if name in SINGLETON_CLASSES:
+                    track_key = f"{name}_singleton"
 
-                # Ground contact point in image
-                bc = bottom_center(xyxy)
-                # Project to WORLD (feet)
-                world_xy = project_points(H, [bc])[0]  # (X_ft, Y_ft)
+                detections.append({
+                    "xyxy": xyxy,
+                    "class_id": int(c),
+                    "conf": float(s),
+                    "tid": int(tid),
+                    "name": name,
+                    "track_key": track_key,
+                })
 
-                # Convert to canvas px using world->canvas homography
-                canvas_pt = world_to_canvas_pts([world_xy])[0]
+            if detections:
+                filtered = []
+                singleton_best = {}
+                for det in detections:
+                    if det["name"] in SINGLETON_CLASSES:
+                        current = singleton_best.get(det["name"])
+                        if current is None or det["conf"] > current["conf"]:
+                            singleton_best[det["name"]] = det
+                    else:
+                        filtered.append(det)
+                filtered.extend(singleton_best.values())
 
-                # Update trails in world coords (store feet for logging)
-                if tid >= 0:
-                    trails[tid].append((world_xy[0], world_xy[1]))
-                    # Draw trail in canvas coords
-                    pts_world = np.array(trails[tid], dtype=np.float32)
+                for det in filtered:
+                    xyxy = det["xyxy"]
+                    name = det["name"]
+                    conf_score = det["conf"]
+                    tid = det["tid"]
+                    track_key = det["track_key"]
+
+                    x1, y1, x2, y2 = map(int, xyxy)
+                    col = color_for_id(track_key if name in SINGLETON_CLASSES or tid < 0 else tid)
+                    cv2.rectangle(annotated, (x1, y1), (x2, y2), col, 2)
+                    if name in SINGLETON_CLASSES:
+                        label = f"{name} {conf_score:.2f}"
+                    else:
+                        label = f"{name}#{tid} {conf_score:.2f}" if tid >= 0 else f"{name} {conf_score:.2f}"
+                    cv2.putText(annotated, label, (x1, max(20, y1-6)),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, col, 2, cv2.LINE_AA)
+
+                    bc = bottom_center(xyxy)
+                    world_xy = project_points(H, [bc])[0]
+                    canvas_pt = world_to_canvas_pts([world_xy])[0]
+
+                    trails[track_key].append((world_xy[0], world_xy[1]))
+                    pts_world = np.array(trails[track_key], dtype=np.float32)
                     pts_canvas = world_to_canvas_pts(pts_world)
                     for i in range(1, len(pts_canvas)):
                         p0 = tuple(pts_canvas[i - 1])
@@ -308,19 +360,20 @@ def main():
                         cv2.line(map_canvas, p0, p1, (0, 0, 0), 6)
                         cv2.line(map_canvas, p0, p1, col, 3)
 
-                # Draw point + label on map
-                mx, my = clamp_canvas_pt(canvas_pt)
-                cv2.circle(map_canvas, (mx, my), 8, (0, 0, 0), -1)
-                cv2.circle(map_canvas, (mx, my), 5, col, -1)
-                mlabel = f"{name}#{tid}" if tid >= 0 else name
-                cv2.putText(map_canvas, mlabel, (mx + 10, my - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 4, cv2.LINE_AA)
-                cv2.putText(map_canvas, mlabel, (mx + 10, my - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (240, 240, 240), 2, cv2.LINE_AA)
+                    mx, my = clamp_canvas_pt(canvas_pt)
+                    cv2.circle(map_canvas, (mx, my), 8, (0, 0, 0), -1)
+                    cv2.circle(map_canvas, (mx, my), 5, col, -1)
+                    if name in SINGLETON_CLASSES:
+                        mlabel = name
+                    else:
+                        mlabel = f"{name}#{tid}" if tid >= 0 else name
+                    cv2.putText(map_canvas, mlabel, (mx + 10, my - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 4, cv2.LINE_AA)
+                    cv2.putText(map_canvas, mlabel, (mx + 10, my - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (240, 240, 240), 2, cv2.LINE_AA)
 
-                # Optional CSV log
-                if csv_writer and tid >= 0:
-                    csv_writer.writerow([int(now), int(tid), name, float(s), float(world_xy[0]), float(world_xy[1])])
+                    if csv_writer:
+                        csv_writer.writerow([int(now), str(track_key), name, conf_score, float(world_xy[0]), float(world_xy[1])])
 
         # Show
         if args.show_video:

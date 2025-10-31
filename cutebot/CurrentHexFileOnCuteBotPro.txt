@@ -1,0 +1,54 @@
+// --- Bluetooth setup (no pairing required recommended in project settings) ---
+bluetooth.startUartService()
+bluetooth.setTransmitPower(7)
+basic.showIcon(IconNames.Heart)
+
+// --- Helpers using Cutebot Pro extension ---
+function cap01(x: number) { return Math.min(100, Math.max(0, x)) }
+function setLR(l: number, r: number) {
+    CutebotPro.pwmCruiseControl(cap01(l), cap01(r))  // 0..100 each side
+}
+function stopMotors() { CutebotPro.pwmCruiseControl(0, 0) }
+
+// --- UART command protocol ---
+// One command per line, examples:
+//   V,40,40           -> left/right 40%
+//   T,50,0,800        -> left 50%, right 0% for 800 ms then stop
+//   S                 -> stop
+//   LED,HEART         -> status icon (HEART|HAPPY|SAD|SQUARE|DIAMOND|CLEAR)
+bluetooth.onUartDataReceived(serial.delimiters(Delimiters.NewLine), function () {
+    const msg = bluetooth.uartReadUntil(serial.delimiters(Delimiters.NewLine)).trim()
+    const p = msg.split(",")
+    const cmd = p[0].toUpperCase()
+
+    const num = (i: number, d = 0) => (p.length > i ? Math.floor(parseFloat(p[i])) : d)
+
+    if (cmd == "V" && p.length >= 3) {
+        setLR(num(1), num(2))
+        bluetooth.uartWriteLine("OK V")
+    } else if (cmd == "T" && p.length >= 4) {
+        setLR(num(1), num(2))
+        basic.pause(Math.max(0, num(3)))
+        stopMotors()
+        bluetooth.uartWriteLine("OK T")
+    } else if (cmd == "S") {
+        stopMotors()
+        bluetooth.uartWriteLine("OK S")
+    } else if (cmd == "LED" && p.length >= 2) {
+        const icon = p[1].toUpperCase()
+        if (icon == "HEART") basic.showIcon(IconNames.Heart)
+        else if (icon == "HAPPY") basic.showIcon(IconNames.Happy)
+        else if (icon == "SAD") basic.showIcon(IconNames.Sad)
+        else if (icon == "SQUARE") basic.showIcon(IconNames.SmallSquare)
+        else if (icon == "DIAMOND") basic.showIcon(IconNames.SmallDiamond)
+        else if (icon == "CLEAR") basic.clearScreen()
+        bluetooth.uartWriteLine("OK LED")
+    } else {
+        bluetooth.uartWriteLine("ERR " + msg)
+    }
+})
+
+// Connection indicators & safety
+bluetooth.onBluetoothConnected(function () { basic.showString("C") })
+bluetooth.onBluetoothDisconnected(function () { basic.showString("X"); stopMotors() })
+stopMotors()

@@ -1,0 +1,36 @@
+YOLO training quickstart (CVAT → Ultralytics YOLO Detection 1.0)
+================================================================
+
+1. Activate the project virtualenv (or create it if missing):
+     python3 -m venv .venv
+     source .venv/bin/activate
+
+2. Install the pinned stack before touching torch/ultralytics. This keeps numpy on 1.26.x so OpenCV and other native deps load cleanly:
+     pip install --no-cache-dir --force-reinstall -r constraints.txt
+   If numpy ever jumps to 2.x, rerun the same command (or explicitly `pip install --force-reinstall "numpy<2"`).
+
+3. Drop the CVAT export into `cvat/ultraYOLODetection1/` and fix the metadata:
+   • In `data.yaml`, set `path: cvat/ultraYOLODetection1` (lowercase keys `train`/`val` already work).
+   • Rewrite the frame lists to absolute paths so Ultralytics never loses the dataset root:
+       python - <<'PY'
+       from pathlib import Path
+       base = Path("cvat/ultraYOLODetection1").resolve()
+       for subset in ["Train.txt", "Validation.txt"]:
+           file = base / subset
+           lines = [line.strip() for line in file.read_text().splitlines() if line.strip()]
+           file.write_text("\n".join(str((base / line).resolve()) for line in lines) + "\n")
+       PY
+
+4. Pull the starting weights from S3 (credentials come from `.env`; unset AWS_PROFILE/SESSION_TOKEN so the direct keys are used):
+     set -a; source .env; set +a; unset AWS_PROFILE AWS_SESSION_TOKEN
+     aws s3 cp s3://wildlife-ugv/models/yolo/yolov8n.pt models/yolov8n.pt
+
+5. Train:
+     yolo detect train data=cvat/ultraYOLODetection1/data.yaml \
+         model=models/yolov8n.pt epochs=50 project=runs/detect \
+         name=ultraYOLODetection1_v1
+
+Troubleshooting
+---------------
+• “numpy.core.multiarray failed to import”: reinstall the pinned stack (step 2).
+• “OMP: Error #179 … Can't open SHM2” on macOS sandboxes: run training outside the restricted environment so PyTorch’s OpenMP runtime can create shared memory.

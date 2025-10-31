@@ -1,6 +1,8 @@
 ## Make a few concise, visual demos
 1. The calibration process is a great candidate. The agent is using its perception (rtsp capture) and my measuring tape results to improve itself.
 2. Camera view to 2d homography is cool.
+3. Demo of MCP tools that prove useful. 
+
 
 ## Outdoors
 1. Measure the back yard deer detection zone.
