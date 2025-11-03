@@ -23,34 +23,43 @@ REOLINK_REFERENCE_IMAGE = Path(__file__).with_name("ReolinkE1Test.jpg")
 IMAGE_WIDTH_PIXELS = 2560
 IMAGE_HEIGHT_PIXELS = 1920
 
-BOARD_LENGTH_INCHES = 30.0  # distance from top to bottom edges in the image frame
-BOARD_WIDTH_INCHES = 24.0  # distance from left to right edges in the image frame
+BOARD_LENGTH_INCHES = 30.0  # distance from top (plants) to bottom edges in inches
+BOARD_WIDTH_INCHES = 24.0  # distance from left to right edges in inches
 
 SYSTEM_PROMPT = (
     "You are a vision assistant that estimates the CuteBot pose on a tabletop robot arena. "
-    "The camera views the board from the side; the end of the board with the plants is the back. "
-    "Heading is expressed in degrees clockwise from the back edge (0° faces the plants at the back, "
-    "90° faces the viewer). The image coordinate system origin is in the top-left corner of the "
-    "raw Reolink E1 frame (x increases to the right, y increases downward)."
+    "The camera views the board from the front; the edge with the plants is the back of the board. "
+    "Heading angles are measured clockwise from this back edge: 0° faces the plants (top of the image), "
+    "90° faces the right edge of the image, 180° faces the camera/foreground (bottom of the image), "
+    "and 270° faces the left edge of the image. The pixel origin is at the top-left corner of the raw "
+    "Reolink E1 frame (x increases to the right, y increases downward)."
 )
 
 USER_PROMPT = (
-    "Identify the CuteBot robot (white body with blue chassis) and estimate its center location "
-    "and heading relative to the provided coordinate system. "
-    "The black rectangle sitting on top of the cardboard is the active board surface; it measures "
-    "exactly 24 inches wide (left-to-right) by 30 inches long (front-to-back). The labelled corners "
-    "represent the black rectangle only: top-left = (0, 0), top-right = (0, 24), bottom-left = (30, 0), "
-    "bottom-right = (30, 24). Use these labels when estimating real-world coordinates. "
+    "Identify the CuteBot robot (white body with blue chassis) and estimate the pose of the very tip of "
+    "its nose (the foremost point between the two front wheels). The black rectangle sitting on top of "
+    "the cardboard is the active board surface; it measures exactly 24 inches wide (left-to-right) by "
+    "30 inches long (back-to-front). The labelled corners refer to this black rectangle only: "
+    "top-left = (0, 0), top-right = (0, 24), bottom-left = (30, 0), bottom-right = (30, 24). "
+    "In this inch coordinate system, x increases from the back edge toward the camera (top to bottom of "
+    "the image) and y increases from the board's left edge to the right edge.\n"
+    "\n"
+    "Work through these steps internally (do not expose them in the final output):\n"
+    "1. Locate the pixel coordinates of the four black board corners listed above.\n"
+    "2. Using those corner pixels, determine the pixel location of the CuteBot nose tip and convert that "
+    "point into board inches.\n"
+    "3. Determine the CuteBot heading using the angle convention described earlier.\n"
+    "\n"
     "Respond with a JSON object containing exactly these fields:\n"
     "coordinate_system: always set to \"image_pixels\".\n"
     "origin: short string describing the origin for operators.\n"
-    "units: units for x/y values, use \"pixels\".\n"
-    "cutebot_center: object with numeric x and y properties (image pixels).\n"
-    "board_coordinates: object with numeric x and y properties measured in inches using the labels above.\n"
-    "heading_degrees: numeric value (0° faces the plants/back, 90° faces the camera/viewer).\n"
+    "units: units for the pixel coordinates, use \"pixels\".\n"
+    "cutebot_nose_pixels: object with numeric x and y properties for the nose tip in image pixels.\n"
+    "cutebot_nose_inches: object with numeric x and y properties for the nose tip in board inches.\n"
+    "heading_degrees: numeric value (use the clockwise convention from the back edge).\n"
     "confidence: numeric value between 0 and 1.\n"
     "notes: short string with reasoning or observed ambiguities.\n"
-    "Do not include any other text or Markdown."
+    "Return only the JSON object—no additional text or Markdown."
 )
 
 
@@ -61,10 +70,10 @@ class CutebotObservation:
     coordinate_system: str
     origin: str
     units: str
-    cutebot_center_x: float
-    cutebot_center_y: float
-    board_center_x: float
-    board_center_y: float
+    cutebot_nose_pixels_x: float
+    cutebot_nose_pixels_y: float
+    cutebot_nose_inches_x: float
+    cutebot_nose_inches_y: float
     heading_degrees: float
     confidence: float
     notes: str
@@ -76,7 +85,8 @@ class CutebotObservation:
             coordinate_system = str(payload["coordinate_system"])
             origin = str(payload["origin"])
             units = str(payload["units"])
-            center = payload["cutebot_center"]
+            nose_pixels = payload["cutebot_nose_pixels"]
+            nose_inches = payload["cutebot_nose_inches"]
             heading = float(payload["heading_degrees"])
             confidence = float(payload["confidence"])
             notes = str(payload["notes"])
@@ -85,46 +95,45 @@ class CutebotObservation:
         except (TypeError, ValueError) as exc:
             raise ValueError("Invalid field types in observation payload") from exc
 
-        if not isinstance(center, Mapping):
-            raise ValueError("cutebot_center must be an object with x and y numbers")
+        if not isinstance(nose_pixels, Mapping):
+            raise ValueError("cutebot_nose_pixels must be an object with x and y numbers")
 
-        board_coords = payload.get("board_coordinates")
-        if not isinstance(board_coords, Mapping):
-            raise ValueError("board_coordinates must be an object with x and y numbers")
-
-        try:
-            center_x = float(center["x"])
-            center_y = float(center["y"])
-        except KeyError as exc:
-            raise ValueError(f"cutebot_center missing coordinate: {exc}") from exc
-        except (TypeError, ValueError) as exc:
-            raise ValueError("cutebot_center.x and cutebot_center.y must be numbers") from exc
+        if not isinstance(nose_inches, Mapping):
+            raise ValueError("cutebot_nose_inches must be an object with x and y numbers")
 
         try:
-            board_x = float(board_coords["x"])
-            board_y = float(board_coords["y"])
+            nose_px_x = float(nose_pixels["x"])
+            nose_px_y = float(nose_pixels["y"])
         except KeyError as exc:
-            raise ValueError(f"board_coordinates missing coordinate: {exc}") from exc
+            raise ValueError(f"cutebot_nose_pixels missing coordinate: {exc}") from exc
         except (TypeError, ValueError) as exc:
-            raise ValueError("board_coordinates.x and board_coordinates.y must be numbers") from exc
+            raise ValueError("cutebot_nose_pixels.x and cutebot_nose_pixels.y must be numbers") from exc
+
+        try:
+            nose_in_x = float(nose_inches["x"])
+            nose_in_y = float(nose_inches["y"])
+        except KeyError as exc:
+            raise ValueError(f"cutebot_nose_inches missing coordinate: {exc}") from exc
+        except (TypeError, ValueError) as exc:
+            raise ValueError("cutebot_nose_inches.x and cutebot_nose_inches.y must be numbers") from exc
 
         if not 0.0 <= confidence <= 1.0:
             raise ValueError("confidence must be between 0 and 1")
 
-        if not (0.0 <= center_x <= IMAGE_WIDTH_PIXELS and 0.0 <= center_y <= IMAGE_HEIGHT_PIXELS):
-            raise ValueError("cutebot_center lies outside the reference image bounds")
+        if not (0.0 <= nose_px_x <= IMAGE_WIDTH_PIXELS and 0.0 <= nose_px_y <= IMAGE_HEIGHT_PIXELS):
+            raise ValueError("cutebot_nose_pixels lies outside the reference image bounds")
 
-        if not (0.0 <= board_x <= BOARD_LENGTH_INCHES and 0.0 <= board_y <= BOARD_WIDTH_INCHES):
-            raise ValueError("board_coordinates lie outside the expected arena bounds")
+        if not (0.0 <= nose_in_x <= BOARD_LENGTH_INCHES and 0.0 <= nose_in_y <= BOARD_WIDTH_INCHES):
+            raise ValueError("cutebot_nose_inches lies outside the expected arena bounds")
 
         return cls(
             coordinate_system=coordinate_system,
             origin=origin,
             units=units,
-            cutebot_center_x=center_x,
-            cutebot_center_y=center_y,
-            board_center_x=board_x,
-            board_center_y=board_y,
+            cutebot_nose_pixels_x=nose_px_x,
+            cutebot_nose_pixels_y=nose_px_y,
+            cutebot_nose_inches_x=nose_in_x,
+            cutebot_nose_inches_y=nose_in_y,
             heading_degrees=heading,
             confidence=confidence,
             notes=notes,
@@ -136,8 +145,8 @@ class CutebotObservation:
             "coordinate_system": self.coordinate_system,
             "origin": self.origin,
             "units": self.units,
-            "cutebot_center": {"x": self.cutebot_center_x, "y": self.cutebot_center_y},
-            "board_coordinates": {"x": self.board_center_x, "y": self.board_center_y},
+            "cutebot_nose_pixels": {"x": self.cutebot_nose_pixels_x, "y": self.cutebot_nose_pixels_y},
+            "cutebot_nose_inches": {"x": self.cutebot_nose_inches_x, "y": self.cutebot_nose_inches_y},
             "heading_degrees": self.heading_degrees,
             "confidence": self.confidence,
             "notes": self.notes,
