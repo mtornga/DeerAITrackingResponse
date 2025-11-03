@@ -25,10 +25,17 @@ def _make_payload(
     heading: float = 45.0,
     confidence: float = 0.8,
 ) -> dict:
+    corners = {
+        "top_left": {"x": 100.0, "y": 100.0},
+        "top_right": {"x": 2000.0, "y": 100.0},
+        "bottom_left": {"x": 110.0, "y": 1500.0},
+        "bottom_right": {"x": 2050.0, "y": 1510.0},
+    }
     return {
         "coordinate_system": "image_pixels",
         "origin": "Top-left of Reolink E1 frame",
         "units": "pixels",
+        "board_corners_pixels": corners,
         "cutebot_nose_pixels": {"x": nose_px_x, "y": nose_px_y},
         "cutebot_nose_inches": {"x": board_x, "y": board_y},
         "heading_degrees": heading,
@@ -43,6 +50,7 @@ def test_cutebot_observation_from_dict_accepts_valid_payload() -> None:
 
     assert observation.coordinate_system == "image_pixels"
     assert observation.units == "pixels"
+    assert set(observation.board_corners_pixels) == {"top_left", "top_right", "bottom_left", "bottom_right"}
     assert observation.cutebot_nose_pixels_x == pytest.approx(payload["cutebot_nose_pixels"]["x"])
     assert observation.cutebot_nose_pixels_y == pytest.approx(payload["cutebot_nose_pixels"]["y"])
     assert observation.cutebot_nose_inches_x == pytest.approx(payload["cutebot_nose_inches"]["x"])
@@ -72,6 +80,13 @@ def test_cutebot_observation_rejects_board_coordinates_out_of_bounds() -> None:
         CutebotObservation.from_dict(payload)
 
 
+def test_cutebot_observation_rejects_missing_corner() -> None:
+    payload = _make_payload()
+    payload["board_corners_pixels"].pop("top_left")
+    with pytest.raises(ValueError):
+        CutebotObservation.from_dict(payload)
+
+
 def test_cutebot_observation_rejects_confidence_outside_bounds() -> None:
     payload = _make_payload(confidence=1.2)
     with pytest.raises(ValueError):
@@ -91,6 +106,7 @@ def test_query_cutebot_pose_live_round_trip(tmp_path: Path) -> None:
     assert 0.0 <= observation.cutebot_nose_pixels_y <= IMAGE_HEIGHT_PIXELS
     assert 0.0 <= observation.cutebot_nose_inches_x <= BOARD_LENGTH_INCHES
     assert 0.0 <= observation.cutebot_nose_inches_y <= BOARD_WIDTH_INCHES
+    assert set(observation.board_corners_pixels) == {"top_left", "top_right", "bottom_left", "bottom_right"}
     assert -180.0 <= observation.heading_degrees <= 360.0
     assert 0.0 <= observation.confidence <= 1.0
     assert observation.notes

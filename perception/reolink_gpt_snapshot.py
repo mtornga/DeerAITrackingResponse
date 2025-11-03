@@ -42,7 +42,9 @@ USER_PROMPT = (
     "30 inches long (back-to-front). The labelled corners refer to this black rectangle only: "
     "top-left = (0, 0), top-right = (0, 24), bottom-left = (30, 0), bottom-right = (30, 24). "
     "In this inch coordinate system, x increases from the back edge toward the camera (top to bottom of "
-    "the image) and y increases from the board's left edge to the right edge.\n"
+    "the image) and y increases from the board's left edge to the right edge. A green arrow decal sits on "
+    "the robot chassis and runs from the rear toward the front; the arrow tip points in the direction the "
+    "CuteBot is facing.\n"
     "\n"
     "Work through these steps internally (do not expose them in the final output):\n"
     "1. Locate the pixel coordinates of the four black board corners listed above.\n"
@@ -54,6 +56,7 @@ USER_PROMPT = (
     "coordinate_system: always set to \"image_pixels\".\n"
     "origin: short string describing the origin for operators.\n"
     "units: units for the pixel coordinates, use \"pixels\".\n"
+    "board_corners_pixels: object holding top_left, top_right, bottom_left, and bottom_right entries, each containing x and y pixel coordinates.\n"
     "cutebot_nose_pixels: object with numeric x and y properties for the nose tip in image pixels.\n"
     "cutebot_nose_inches: object with numeric x and y properties for the nose tip in board inches.\n"
     "heading_degrees: numeric value (use the clockwise convention from the back edge).\n"
@@ -70,6 +73,7 @@ class CutebotObservation:
     coordinate_system: str
     origin: str
     units: str
+    board_corners_pixels: Dict[str, Dict[str, float]]
     cutebot_nose_pixels_x: float
     cutebot_nose_pixels_y: float
     cutebot_nose_inches_x: float
@@ -85,6 +89,7 @@ class CutebotObservation:
             coordinate_system = str(payload["coordinate_system"])
             origin = str(payload["origin"])
             units = str(payload["units"])
+            corners = payload["board_corners_pixels"]
             nose_pixels = payload["cutebot_nose_pixels"]
             nose_inches = payload["cutebot_nose_inches"]
             heading = float(payload["heading_degrees"])
@@ -94,6 +99,28 @@ class CutebotObservation:
             raise ValueError(f"Missing required field: {exc}") from exc
         except (TypeError, ValueError) as exc:
             raise ValueError("Invalid field types in observation payload") from exc
+
+        if not isinstance(corners, Mapping):
+            raise ValueError("board_corners_pixels must be an object with corner entries")
+
+        normalised_corners: Dict[str, Dict[str, float]] = {}
+        for corner_name in ("top_left", "top_right", "bottom_left", "bottom_right"):
+            corner_value = corners.get(corner_name)
+            if not isinstance(corner_value, Mapping):
+                raise ValueError(f"board_corners_pixels.{corner_name} must be an object with x and y numbers")
+            try:
+                corner_x = float(corner_value["x"])
+                corner_y = float(corner_value["y"])
+            except KeyError as exc:
+                raise ValueError(f"board_corners_pixels.{corner_name} missing coordinate: {exc}") from exc
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"board_corners_pixels.{corner_name}.x and .y must be numbers"
+                ) from exc
+
+            if not (0.0 <= corner_x <= IMAGE_WIDTH_PIXELS and 0.0 <= corner_y <= IMAGE_HEIGHT_PIXELS):
+                raise ValueError(f"board_corners_pixels.{corner_name} lies outside the image bounds")
+            normalised_corners[corner_name] = {"x": corner_x, "y": corner_y}
 
         if not isinstance(nose_pixels, Mapping):
             raise ValueError("cutebot_nose_pixels must be an object with x and y numbers")
@@ -130,6 +157,7 @@ class CutebotObservation:
             coordinate_system=coordinate_system,
             origin=origin,
             units=units,
+            board_corners_pixels=normalised_corners,
             cutebot_nose_pixels_x=nose_px_x,
             cutebot_nose_pixels_y=nose_px_y,
             cutebot_nose_inches_x=nose_in_x,
@@ -145,6 +173,7 @@ class CutebotObservation:
             "coordinate_system": self.coordinate_system,
             "origin": self.origin,
             "units": self.units,
+            "board_corners_pixels": self.board_corners_pixels,
             "cutebot_nose_pixels": {"x": self.cutebot_nose_pixels_x, "y": self.cutebot_nose_pixels_y},
             "cutebot_nose_inches": {"x": self.cutebot_nose_inches_x, "y": self.cutebot_nose_inches_y},
             "heading_degrees": self.heading_degrees,
