@@ -16,7 +16,7 @@ from .tracker import CutebotPose, TopDownCutebotTracker
 class TargetPose:
     x_in: float
     y_in: float
-    heading: str = "top"  # informational; heading control remains manual
+    heading_degrees: Optional[float] = None
 
 
 @dataclass
@@ -303,6 +303,7 @@ class CutebotFeedbackLoop:
                     "y_in": pose.y_in,
                     "confidence": pose.confidence,
                     "timestamp": pose.timestamp,
+                    "heading_degrees": pose.heading_degrees,
                 }
                 for idx, pose in enumerate(self.history)
             ],

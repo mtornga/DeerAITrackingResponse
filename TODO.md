@@ -11,3 +11,4 @@
 ## Indoors
 1. Get the cutebot moving. Use agent to self-improve the movements and perception of position on the board.
 2. Create scripts to react to horse detection and move to the area. 
+3. Pay down some of this helper debt. Probably won't have the coordinate labels or heading labels in the yard. The big green arrow on cutebot is a "maybe" for the outdoor version. 

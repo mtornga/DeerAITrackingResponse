@@ -3,16 +3,18 @@ from __future__ import annotations
 import asyncio
 import csv
 import json
+import subprocess
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 
 import cv2
 import numpy as np
 
 from calibration.tabletop_geometry import image_to_world_homography
 from env_loader import load_env_file, require_env
+from perception.reolink_gpt_snapshot import query_cutebot_pose, CutebotObservation
 
 
 def _load_calibration_matrix(path: Path) -> np.ndarray:
@@ -39,6 +41,8 @@ class CutebotPose:
     y_ft: float
     confidence: float
     timestamp: float
+    heading_degrees: Optional[float] = None
+    raw_payload: Optional[dict[str, Any]] = field(default=None)
 
     @property
     def x_in(self) -> float:
@@ -264,3 +268,107 @@ class TopDownCutebotTracker:
     @property
     def last_frame(self) -> Optional[np.ndarray]:
         return self._last_frame
+
+
+class ReolinkGPTTracker:
+    """Pose tracker that queries the Reolink snapshot via GPT-based perception."""
+
+    supports_heading = True
+
+    def __init__(
+        self,
+        *,
+        rtsp_url: Optional[str] = None,
+        snapshot_dir: Path | str = Path("tmp/reolink_snapshots"),
+        ffmpeg_path: str = "ffmpeg",
+        transport: str = "tcp",
+        cleanup_snapshots: bool = True,
+        capture_timeout_sec: float = 20.0,
+    ) -> None:
+        load_env_file()
+        self.rtsp_url = rtsp_url or require_env("REOLINK_E1_RTSP")
+        self.snapshot_dir = Path(snapshot_dir)
+        self.snapshot_dir.mkdir(parents=True, exist_ok=True)
+        self.ffmpeg_path = ffmpeg_path
+        self.transport = transport
+        self.cleanup_snapshots = cleanup_snapshots
+        self.capture_timeout_sec = capture_timeout_sec
+        self._last_observation: Optional[CutebotObservation] = None
+
+    def start(self) -> None:
+        return
+
+    def close(self) -> None:
+        self._last_observation = None
+
+    def _snapshot_path(self) -> Path:
+        timestamp = int(time.time() * 1000)
+        return self.snapshot_dir / f"reolink_snapshot_{timestamp}.jpg"
+
+    def _capture_snapshot(self) -> Path:
+        path = self._snapshot_path()
+        cmd = [
+            self.ffmpeg_path,
+            "-loglevel",
+            "error",
+            "-rtsp_transport",
+            self.transport,
+            "-i",
+            self.rtsp_url,
+            "-frames:v",
+            "1",
+            "-q:v",
+            "2",
+            "-y",
+            str(path),
+        ]
+        subprocess.run(cmd, check=True, timeout=self.capture_timeout_sec)
+        return path
+
+    def detect_once(self) -> Optional[CutebotPose]:
+        snapshot_path: Optional[Path] = None
+        try:
+            snapshot_path = self._capture_snapshot()
+            observation = query_cutebot_pose(snapshot_path)
+            self._last_observation = observation
+        except Exception:
+            return None
+        finally:
+            if snapshot_path and self.cleanup_snapshots:
+                try:
+                    snapshot_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
+
+        forward_in = float(observation.cutebot_nose_inches_projected_x)
+        lateral_in = float(observation.cutebot_nose_inches_projected_y)
+
+        x_ft = lateral_in / 12.0
+        y_ft = forward_in / 12.0
+
+        return CutebotPose(
+            x_ft=x_ft,
+            y_ft=y_ft,
+            confidence=float(observation.confidence),
+            timestamp=time.time(),
+            heading_degrees=float(observation.heading_degrees),
+            raw_payload=observation.as_dict(),
+        )
+
+    async def get_pose(
+        self,
+        *,
+        retries: int = 3,
+        delay_sec: float = 1.0,
+        min_confidence: float = 0.0,
+    ) -> CutebotPose:
+        for _ in range(retries):
+            pose = await asyncio.to_thread(self.detect_once)
+            if pose and pose.confidence >= min_confidence:
+                return pose
+            await asyncio.sleep(delay_sec)
+        raise RuntimeError("Failed to detect Cutebot with Reolink tracker.")
+
+    @property
+    def last_observation(self) -> Optional[CutebotObservation]:
+        return self._last_observation

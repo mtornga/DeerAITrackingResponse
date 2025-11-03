@@ -46,13 +46,24 @@ USER_PROMPT = (
     "In this inch coordinate system, x increases from the back edge toward the camera (top to bottom of "
     "the image) and y increases from the board's left edge to the right edge. A green arrow decal sits on "
     "the robot chassis and runs from the rear toward the front; the arrow tip points in the direction the "
-    "CuteBot is facing.\n"
+    "CuteBot is facing. The four board corners form a clean rectangle—only use the black surface (ignore "
+    "cardboard edges). Laminated markers on the board indicate headings: the card labeled \"0°\" sits along "
+    "the board edge where arrows should point when the heading is 0°, \"90°\" at the edge representing 90°, "
+    "\"180°\" for 180°, and \"270°\" at the back/top edge. Use these labels to confirm your heading estimate.\n"
+    "\n"
+    "Heading orientation should obey these examples:\n"
+    "- Arrow pointing directly to the right edge of the image → heading 0°.\n"
+    "- Arrow pointing toward the bottom of the image (toward the camera) → heading 90°.\n"
+    "- Arrow pointing to the left edge of the image → heading 180°.\n"
+    "- Arrow pointing toward the top of the image (toward the plants) → heading 270°.\n"
     "\n"
     "Work through these steps internally (do not expose them in the final output):\n"
-    "1. Locate the pixel coordinates of the four black board corners listed above.\n"
+    "1. Carefully locate the pixel coordinates of the four black board corners listed above. Verify the "
+    "top/bottom edges are nearly horizontal and the left/right edges are nearly vertical; reconsider if the corners "
+    "produce a skewed rectangle.\n"
     "2. Using those corner pixels, determine the pixel location of the CuteBot nose tip and convert that "
-    "point into board inches.\n"
-    "3. Determine the CuteBot heading using the angle convention described earlier.\n"
+    "point into board inches while respecting the 30 in by 24 in dimensions. If the geometry differs by more than ~10%%, note it.\n"
+    "3. Determine the CuteBot heading using the arrow decal and the angle convention described earlier; double-check that the computed arrow vector aligns with the examples above before reporting the angle.\n"
     "\n"
     "Respond with a JSON object containing exactly these fields:\n"
     "coordinate_system: always set to \"image_pixels\".\n"
@@ -89,6 +100,7 @@ class CutebotObservation:
     arrow_tip_pixels_x: Optional[float]
     arrow_tip_pixels_y: Optional[float]
     arrow_heading_degrees: Optional[float]
+    heading_model_degrees: float
     heading_degrees: float
     confidence: float
     notes: str
@@ -181,6 +193,10 @@ class CutebotObservation:
             except ValueError:
                 arrow_heading = None
 
+        heading_model = heading
+        if arrow_heading is not None:
+            heading = arrow_heading
+
         return cls(
             coordinate_system=coordinate_system,
             origin=origin,
@@ -197,9 +213,10 @@ class CutebotObservation:
             arrow_tip_pixels_x=arrow_tip[0] if arrow_tip else None,
             arrow_tip_pixels_y=arrow_tip[1] if arrow_tip else None,
             arrow_heading_degrees=arrow_heading,
+            heading_model_degrees=heading_model,
             heading_degrees=heading,
             confidence=confidence,
-            notes=_append_geometry_notes(notes, aspect_ratio_error, arrow_heading),
+            notes=_append_geometry_notes(notes, aspect_ratio_error, arrow_heading, heading_model),
         )
 
     def as_dict(self) -> Dict[str, Any]:
@@ -222,6 +239,7 @@ class CutebotObservation:
             if self.arrow_tip_pixels_x is None
             else {"x": self.arrow_tip_pixels_x, "y": self.arrow_tip_pixels_y},
             "arrow_heading_degrees": self.arrow_heading_degrees,
+            "heading_model_degrees": self.heading_model_degrees,
             "heading_degrees": self.heading_degrees,
             "confidence": self.confidence,
             "notes": self.notes,
@@ -310,12 +328,17 @@ def _validate_corner_geometry(corners: Mapping[str, Mapping[str, float]]) -> flo
     return abs(observed_ratio - expected_ratio)
 
 
-def _append_geometry_notes(notes: str, aspect_ratio_error: float, arrow_heading: Optional[float]) -> str:
+def _append_geometry_notes(
+    notes: str, aspect_ratio_error: float, arrow_heading: Optional[float], model_heading: float
+) -> str:
     extra_parts = []
     if aspect_ratio_error > 0.1:
         extra_parts.append(f"corner_ratio_delta≈{aspect_ratio_error:.2f}")
     if arrow_heading is not None:
         extra_parts.append(f"arrow_heading≈{arrow_heading:.1f}°")
+        delta = min((arrow_heading - model_heading) % 360, (model_heading - arrow_heading) % 360)
+        if delta > 5.0:
+            extra_parts.append(f"arrow_vs_model≈{delta:.1f}°")
     if not extra_parts:
         return notes
     prefix = f"{notes} | " if notes else ""
@@ -340,8 +363,10 @@ def _compute_heading_from_arrow(tail_x: float, tail_y: float, tip_x: float, tip_
     dy = tip_y - tail_y
     if dx == 0.0 and dy == 0.0:
         raise ValueError("Arrow vector has zero length")
-    angle = math.degrees(math.atan2(dx, -dy))
-    return angle % 360.0
+    angle = math.degrees(math.atan2(dy, dx))
+    if angle < 0.0:
+        angle += 360.0
+    return angle
 
 
 def _project_nose_inches(

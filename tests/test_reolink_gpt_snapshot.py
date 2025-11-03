@@ -65,8 +65,9 @@ def test_cutebot_observation_from_dict_accepts_valid_payload() -> None:
     assert observation.arrow_tail_pixels_y == pytest.approx(payload["arrow_tail_pixels"]["y"])
     assert observation.arrow_tip_pixels_x == pytest.approx(payload["arrow_tip_pixels"]["x"])
     assert observation.arrow_tip_pixels_y == pytest.approx(payload["arrow_tip_pixels"]["y"])
-    assert observation.arrow_heading_degrees == pytest.approx(0.0, abs=1e-6)
-    assert observation.heading_degrees == pytest.approx(payload["heading_degrees"])
+    assert observation.arrow_heading_degrees == pytest.approx(270.0, abs=1e-6)
+    assert observation.heading_model_degrees == pytest.approx(payload["heading_degrees"])
+    assert observation.heading_degrees == pytest.approx(270.0, abs=1e-6)
     assert observation.confidence == pytest.approx(payload["confidence"])
 
 
@@ -110,6 +111,8 @@ def test_cutebot_observation_handles_missing_arrow() -> None:
     assert observation.arrow_tail_pixels_x is None
     assert observation.arrow_tip_pixels_x is None
     assert observation.arrow_heading_degrees is None
+    assert observation.heading_model_degrees == pytest.approx(payload["heading_degrees"])
+    assert observation.heading_degrees == pytest.approx(payload["heading_degrees"])
 
 
 @pytest.mark.integration
@@ -136,4 +139,5 @@ def test_query_cutebot_pose_live_round_trip(tmp_path: Path) -> None:
     if observation.arrow_tip_pixels_x is not None:
         assert 0.0 <= observation.arrow_tip_pixels_x <= IMAGE_WIDTH_PIXELS
         assert 0.0 <= observation.arrow_tip_pixels_y <= IMAGE_HEIGHT_PIXELS
+    assert -180.0 <= observation.heading_model_degrees <= 360.0
     assert observation.notes

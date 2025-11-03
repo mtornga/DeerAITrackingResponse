@@ -98,6 +98,8 @@ class CutebotUARTSession(AbstractAsyncContextManager):
         self._queue: asyncio.Queue[str] = asyncio.Queue(maxsize=64)
         self._send_lock = asyncio.Lock()
         self._notifications_started = False
+        self._heading_streaming = False
+        self._last_heading: Optional[float] = None
 
     async def __aenter__(self):
         await self.connect()
@@ -113,12 +115,20 @@ class CutebotUARTSession(AbstractAsyncContextManager):
 
     def _handle_uart(self, _sender, data: bytearray) -> None:
         text = data.decode(errors="ignore").strip()
+        if not text:
+            return
+        if text.upper().startswith("HEADING"):
+            parts = text.split(",", 1)
+            if len(parts) == 2:
+                try:
+                    self._last_heading = float(parts[1])
+                except ValueError:
+                    pass
         if self._message_handler:
             self._message_handler(text)
         try:
             self._queue.put_nowait(text)
         except asyncio.QueueFull:
-            # Drop oldest message to keep queue flowing
             try:
                 _ = self._queue.get_nowait()
             except asyncio.QueueEmpty:
@@ -224,6 +234,36 @@ class CutebotUARTSession(AbstractAsyncContextManager):
             return await asyncio.wait_for(self._queue.get(), timeout)
         except asyncio.TimeoutError:
             return None
+
+    async def enable_heading_stream(self, enable: bool = True) -> None:
+        command = "H,ON" if enable else "H,OFF"
+        await self.send_line(command)
+        self._heading_streaming = enable
+
+    async def request_heading(self, timeout: float = 2.0) -> Optional[float]:
+        await self.send_line("H")
+        deadline = asyncio.get_event_loop().time() + timeout
+        while True:
+            remaining = deadline - asyncio.get_event_loop().time()
+            if remaining <= 0:
+                break
+            msg = await self.get_notification(timeout=remaining)
+            if not msg:
+                continue
+            if msg.upper().startswith("HEADING"):
+                parts = msg.split(",", 1)
+                if len(parts) == 2:
+                    try:
+                        self._last_heading = float(parts[1])
+                        return self._last_heading
+                    except ValueError:
+                        continue
+        return None
+
+    @property
+    def last_heading(self) -> Optional[float]:
+        return self._last_heading
+
 
 
 async def interactive_cli() -> None:

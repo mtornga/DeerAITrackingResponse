@@ -10,12 +10,30 @@ function setLR(l: number, r: number) {
 }
 function stopMotors() { CutebotPro.pwmCruiseControl(0, 0) }
 
+// --- Heading streaming state ---
+let streamHeading = false
+
+// Background task to stream heading when enabled
+control.inBackground(function () {
+    while (true) {
+        if (streamHeading) {
+            const h = input.compassHeading() // 0..359 (auto-prompts for calibration if needed)
+            bluetooth.uartWriteLine("HEADING," + h)
+        }
+        basic.pause(200) // ~5 Hz
+    }
+})
+
 // --- UART command protocol ---
 // One command per line, examples:
 //   V,40,40           -> left/right 40%
 //   T,50,0,800        -> left 50%, right 0% for 800 ms then stop
 //   S                 -> stop
 //   LED,HEART         -> status icon (HEART|HAPPY|SAD|SQUARE|DIAMOND|CLEAR)
+//   H                 -> respond once with HEADING,<deg>
+//   H,ON              -> start streaming HEADING,<deg> at ~5 Hz
+//   H,OFF             -> stop streaming
+//   CAL               -> run compass calibration UI
 bluetooth.onUartDataReceived(serial.delimiters(Delimiters.NewLine), function () {
     const msg = bluetooth.uartReadUntil(serial.delimiters(Delimiters.NewLine)).trim()
     const p = msg.split(",")
@@ -43,6 +61,26 @@ bluetooth.onUartDataReceived(serial.delimiters(Delimiters.NewLine), function () 
         else if (icon == "DIAMOND") basic.showIcon(IconNames.SmallDiamond)
         else if (icon == "CLEAR") basic.clearScreen()
         bluetooth.uartWriteLine("OK LED")
+    } else if (cmd == "H") {
+        // One-shot or stream toggle
+        if (p.length >= 2) {
+            const mode = p[1].toUpperCase()
+            if (mode == "ON") {
+                streamHeading = true
+                bluetooth.uartWriteLine("OK H,ON")
+            } else if (mode == "OFF") {
+                streamHeading = false
+                bluetooth.uartWriteLine("OK H,OFF")
+            } else {
+                bluetooth.uartWriteLine("ERR H " + p[1])
+            }
+        } else {
+            const h = input.compassHeading()
+            bluetooth.uartWriteLine("HEADING," + h)
+        }
+    } else if (cmd == "CAL") {
+        input.calibrateCompass() // shows the built-in calibration UI
+        bluetooth.uartWriteLine("OK CAL")
     } else {
         bluetooth.uartWriteLine("ERR " + msg)
     }

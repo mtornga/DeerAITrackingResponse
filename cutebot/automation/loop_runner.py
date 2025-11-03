@@ -3,11 +3,81 @@ from __future__ import annotations
 import argparse
 import asyncio
 from pathlib import Path
+from typing import Optional
 
 from cutebot.controller_auto import CutebotUARTSession
 
 from .feedback import CutebotFeedbackLoop, TargetPose
-from .tracker import TopDownCutebotTracker
+from .tracker import TopDownCutebotTracker, ReolinkGPTTracker
+
+
+def _normalize_heading_diff(target: float, current: float) -> float:
+    diff = (target - current + 180.0) % 360.0 - 180.0
+    return diff
+
+
+async def _align_heading(
+    controller: CutebotUARTSession,
+    tracker,
+    *,
+    target_heading: float,
+    tolerance: float,
+    max_iterations: int,
+    settle_sec: float,
+    duration_ms: int,
+    pose_retries: int,
+    pose_delay: float,
+    min_confidence: float,
+    pivot_speed: int,
+) -> bool:
+    last_diff: Optional[float] = None
+    last_direction: Optional[int] = None
+
+    for attempt in range(1, max_iterations + 1):
+        pose = await tracker.get_pose(
+            retries=pose_retries,
+            delay_sec=pose_delay,
+            min_confidence=min_confidence,
+        )
+        heading = pose.heading_degrees
+        if heading is None:
+            print("[heading] Tracker did not provide heading; aborting alignment.")
+            return False
+
+        diff = _normalize_heading_diff(target_heading, heading)
+        print(
+            f"[heading] attempt={attempt} heading={heading:.1f}° diff={diff:+.1f}°"
+        )
+
+        if abs(diff) <= tolerance:
+            await controller.stop()
+            print("[heading] Heading within tolerance.")
+            return True
+
+        if last_diff is not None and last_direction is not None:
+            if abs(diff) >= abs(last_diff) - 1.0:
+                direction = -last_direction
+            else:
+                direction = 1 if diff > 0 else -1
+        else:
+            direction = 1 if diff > 0 else -1
+
+        last_diff = diff
+        last_direction = direction
+
+        if direction > 0:
+            left = 0
+            right = pivot_speed
+        else:
+            left = pivot_speed
+            right = 0
+
+        await controller.drive_timed(left, right, duration_ms)
+        await controller.stop()
+        await asyncio.sleep(settle_sec)
+
+    print("[heading] Failed to reach target heading within allotted iterations.")
+    return False
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -98,15 +168,73 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--tracker-backend",
-        choices=("csv", "yolo"),
+        choices=("csv", "yolo", "reolink"),
         default="csv",
-        help="Source of pose estimates. 'csv' tails detections_world.csv produced by demo/topdown_tracker.py.",
+        help="Source of pose estimates. 'csv' tails detections_world.csv; 'yolo' runs detection live; 'reolink' queries the GPT-based Reolink tracker.",
     )
     parser.add_argument(
         "--tracker-csv",
         type=Path,
         default=Path("detections_world.csv"),
         help="Path to the CSV written by demo/topdown_tracker.py when using the csv backend.",
+    )
+    parser.add_argument(
+        "--reolink-snapshot-dir",
+        type=Path,
+        default=Path("tmp/reolink_snapshots"),
+        help="Directory for temporary snapshots when using the Reolink GPT tracker.",
+    )
+    parser.add_argument(
+        "--reolink-keep-snapshots",
+        action="store_true",
+        help="Keep captured Reolink snapshots on disk for debugging.",
+    )
+    parser.add_argument(
+        "--reolink-transport",
+        choices=("tcp", "udp"),
+        default="tcp",
+        help="RTSP transport protocol for Reolink snapshot capture.",
+    )
+    parser.add_argument(
+        "--reolink-ffmpeg",
+        default="ffmpeg",
+        help="Path to the ffmpeg binary used to capture Reolink frames.",
+    )
+    parser.add_argument(
+        "--reolink-capture-timeout",
+        type=float,
+        default=20.0,
+        help="Timeout in seconds when capturing a Reolink snapshot.",
+    )
+    parser.add_argument(
+        "--target-heading",
+        type=float,
+        default=None,
+        help="Desired final heading in degrees (0°=right, 90°=toward camera). Requires the Reolink tracker.",
+    )
+    parser.add_argument(
+        "--heading-tolerance",
+        type=float,
+        default=12.0,
+        help="Tolerance in degrees when aligning the final heading.",
+    )
+    parser.add_argument(
+        "--heading-max-iterations",
+        type=int,
+        default=8,
+        help="Maximum heading adjustment iterations after reaching the target position.",
+    )
+    parser.add_argument(
+        "--heading-settle-sec",
+        type=float,
+        default=1.0,
+        help="Settle time between heading adjustment pulses.",
+    )
+    parser.add_argument(
+        "--heading-duration-ms",
+        type=int,
+        default=220,
+        help="Drive pulse duration in milliseconds for heading adjustments.",
     )
     parser.add_argument(
         "--pose-retries",
@@ -163,16 +291,27 @@ async def run_cycle(
     cycle_index: int,
     args: argparse.Namespace,
 ) -> None:
-    tracker = TopDownCutebotTracker(
-        model_path=args.model,
-        calibration_path=args.calibration,
-        csv_path=args.tracker_csv,
-        rtsp_url=args.rtsp,
-        conf=args.conf,
-        iou=args.iou,
-        backend=args.tracker_backend,
-    )
-    target = TargetPose(x_in=args.target_x, y_in=args.target_y)
+    if args.tracker_backend == "reolink":
+        tracker = ReolinkGPTTracker(
+            rtsp_url=args.rtsp,
+            snapshot_dir=args.reolink_snapshot_dir,
+            ffmpeg_path=args.reolink_ffmpeg,
+            transport=args.reolink_transport,
+            cleanup_snapshots=not args.reolink_keep_snapshots,
+            capture_timeout_sec=args.reolink_capture_timeout,
+        )
+    else:
+        tracker = TopDownCutebotTracker(
+            model_path=args.model,
+            calibration_path=args.calibration,
+            csv_path=args.tracker_csv,
+            rtsp_url=args.rtsp,
+            conf=args.conf,
+            iou=args.iou,
+            backend=args.tracker_backend,
+        )
+
+    target = TargetPose(x_in=args.target_x, y_in=args.target_y, heading_degrees=args.target_heading)
 
     async with CutebotUARTSession(verbose=args.controller_verbose) as controller:
         feedback = CutebotFeedbackLoop(
@@ -199,6 +338,24 @@ async def run_cycle(
                 f"({final_pose.x_in:.2f}, {final_pose.y_in:.2f})\" "
                 f"after {len(feedback.history)} measurements."
             )
+
+            if (
+                args.target_heading is not None
+                and getattr(tracker, "supports_heading", False)
+            ):
+                await _align_heading(
+                    controller,
+                    tracker,
+                    target_heading=args.target_heading,
+                    tolerance=args.heading_tolerance,
+                    max_iterations=args.heading_max_iterations,
+                    settle_sec=args.heading_settle_sec,
+                    duration_ms=args.heading_duration_ms,
+                    pose_retries=args.pose_retries,
+                    pose_delay=args.pose_delay,
+                    min_confidence=args.min_conf,
+                    pivot_speed=args.pivot_speed,
+                )
         finally:
             tracker.close()
 
