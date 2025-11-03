@@ -6,7 +6,7 @@ This is a software platform for managing deer and other wildlife on the user's p
 
 ### Indoor tabletop simulation
 
-A 3'x3' table in my office with a Wyze v2 camera, objects to stand-in for wildlife, and a CuteBot to move around. 
+A 24"'x 30" table in my office with a Wyze v2 camera for detection, a reolink E1 for overwatch, objects to stand-in for wildlife, and a CuteBot to move around. 
 
 The milestones here are: 
 1. Pull images from the RTSP stream when needed.
@@ -14,6 +14,12 @@ The milestones here are:
 3. Locate objects in the environment
 4. Route the CuteBot to specified coordinates
 5. Iterate with realtime tracking, cutebot behaviors, and more.
+
+For indoor work Wyze should be used primarily to detect and suggest a location. This simulates the low angle outdoor camera that gets a side view of animals.
+The Reolink E1 should be used to better determine the location of objects in the 24x30 tabletop.
+
+The board is perceived from multiple angles, but bottom left from the viewpoint of the Wyze camera is considered 0",0", top left is 0",24", top right is 30",24", bottom right is 30",0". An object facing directly towards the plants has a heading of 0 degrees.
+
 
 ### Outdoor solution
 

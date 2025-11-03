@@ -85,6 +85,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Enable verbose logging from the BLE controller.",
     )
     parser.add_argument(
+        "--forward-speed",
+        type=int,
+        default=28,
+        help="Base forward PWM (0-100). Lower for gentler moves.",
+    )
+    parser.add_argument(
+        "--pivot-speed",
+        type=int,
+        default=26,
+        help="Pivot PWM (0-100).",
+    )
+    parser.add_argument(
         "--tracker-backend",
         choices=("csv", "yolo"),
         default="csv",
@@ -115,6 +127,30 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Minimum detection confidence to accept (set to 0 to accept everything).",
     )
     parser.add_argument(
+        "--max-advance",
+        type=float,
+        default=3.0,
+        help="Maximum forward distance (inches) for a single drive pulse.",
+    )
+    parser.add_argument(
+        "--min-duration",
+        type=int,
+        default=160,
+        help="Minimum drive pulse duration in milliseconds.",
+    )
+    parser.add_argument(
+        "--max-duration",
+        type=int,
+        default=360,
+        help="Maximum drive pulse duration in milliseconds.",
+    )
+    parser.add_argument(
+        "--pivot-first-threshold",
+        type=float,
+        default=4.0,
+        help="If lateral error exceeds this (inches), pivot before moving forward.",
+    )
+    parser.add_argument(
         "--log-dir",
         type=Path,
         default=Path("logs/cutebot_sessions"),
@@ -140,16 +176,22 @@ async def run_cycle(
 
     async with CutebotUARTSession(verbose=args.controller_verbose) as controller:
         feedback = CutebotFeedbackLoop(
-            controller=controller,
-            tracker=tracker,
-            target=target,
-            pos_tolerance_in=args.pos_tol,
-            lateral_tolerance_in=args.lat_tol,
-            pose_retries=args.pose_retries,
-            pose_delay_sec=args.pose_delay,
-            min_confidence=args.min_conf,
-            session_log_dir=args.log_dir,
-        )
+        controller=controller,
+        tracker=tracker,
+        target=target,
+        forward_speed=args.forward_speed,
+        pivot_speed=args.pivot_speed,
+        pos_tolerance_in=args.pos_tol,
+        lateral_tolerance_in=args.lat_tol,
+        pose_retries=args.pose_retries,
+        pose_delay_sec=args.pose_delay,
+        min_confidence=args.min_conf,
+        max_advance_in=args.max_advance,
+        min_duration_ms=args.min_duration,
+        max_duration_ms=args.max_duration,
+        pivot_first_threshold_in=args.pivot_first_threshold,
+        session_log_dir=args.log_dir,
+    )
         try:
             final_pose = await feedback.move_to_target()
             print(

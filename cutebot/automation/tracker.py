@@ -11,6 +11,7 @@ from typing import Optional
 import cv2
 import numpy as np
 
+from calibration.tabletop_geometry import image_to_world_homography
 from env_loader import load_env_file, require_env
 
 
@@ -59,8 +60,8 @@ class TopDownCutebotTracker:
     def __init__(
         self,
         *,
-        model_path: Path | str = Path("runs/detect/train4/weights/best.pt"),
-        calibration_path: Path | str = Path("calibration/tabletop_affine.json"),
+        model_path: Path | str = Path("runs/detect/ultraYOLODetection1_v13/weights/best.pt"),
+        calibration_path: Path | str | None = None,
         csv_path: Path | str = Path("detections_world.csv"),
         rtsp_url: Optional[str] = None,
         target_class: str = "cutebot",
@@ -70,7 +71,7 @@ class TopDownCutebotTracker:
     ) -> None:
         load_env_file()
         self.model_path = Path(model_path)
-        self.calibration_path = Path(calibration_path)
+        self.calibration_path = Path(calibration_path) if calibration_path else None
         self.csv_path = Path(csv_path)
         self.rtsp_url = rtsp_url
         self.target_class = target_class.lower()
@@ -102,7 +103,7 @@ class TopDownCutebotTracker:
 
         if not self.model_path.exists():
             raise FileNotFoundError(f"YOLO model not found: {self.model_path}")
-        if not self.calibration_path.exists():
+        if self.calibration_path and not self.calibration_path.exists():
             raise FileNotFoundError(f"Calibration file not found: {self.calibration_path}")
 
         try:
@@ -114,7 +115,10 @@ class TopDownCutebotTracker:
             ) from exc
 
         self._model = YOLO(str(self.model_path))
-        self._matrix = _load_calibration_matrix(self.calibration_path)
+        if self.calibration_path:
+            self._matrix = _load_calibration_matrix(self.calibration_path)
+        else:
+            self._matrix = image_to_world_homography()
 
         source = self.camera_source
         capture = cv2.VideoCapture(source)

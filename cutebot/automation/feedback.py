@@ -51,9 +51,10 @@ class CutebotFeedbackLoop:
         max_advance_in: float = 3.0,
         min_duration_ms: int = 160,
         max_duration_ms: int = 360,
-        pose_retries: int = 15,
-        pose_delay_sec: float = 0.35,
+        pose_retries: int = 30,
+        pose_delay_sec: float = 0.45,
         min_confidence: float = 0.25,
+        pivot_first_threshold_in: float = 4.0,
         session_log_dir: Path = Path("logs/cutebot_sessions"),
     ) -> None:
         self.controller = controller
@@ -74,6 +75,7 @@ class CutebotFeedbackLoop:
         self.pose_retries = pose_retries
         self.pose_delay_sec = pose_delay_sec
         self.min_confidence = min_confidence
+        self.pivot_first_threshold_in = pivot_first_threshold_in
 
         self.history: List[CutebotPose] = []
         self.commands: List[ExecutedCommand] = []
@@ -115,6 +117,11 @@ class CutebotFeedbackLoop:
                     await self.controller.stop()
                     status = "success"
                     return pose
+
+                if abs(lateral_error) >= self.pivot_first_threshold_in:
+                    await self._pivot_adjust(iteration, lateral_error)
+                    await asyncio.sleep(self.settle_sec)
+                    continue
 
                 if forward_error > self.pos_tolerance_in:
                     await self._drive_towards(iteration, lateral_error, forward_error)
@@ -179,7 +186,18 @@ class CutebotFeedbackLoop:
             f"forward_error {forward_error:+.2f}\" with lateral_error {lateral_error:+.2f}\" "
             f"(distance {distance_in:.2f}\")"
         )
-        await self._execute_drive(iteration, left, right, duration_ms, reason)
+        current_pose = self.history[-1] if self.history else None
+        await self._execute_drive(
+            iteration,
+            left,
+            right,
+            duration_ms,
+            reason,
+            pose=current_pose,
+            lateral_error=lateral_error,
+            forward_error=forward_error,
+            action="drive",
+        )
 
     async def _pivot_adjust(self, iteration: int, lateral_error: float) -> None:
         if abs(lateral_error) <= self.lateral_tolerance_in:
@@ -187,12 +205,23 @@ class CutebotFeedbackLoop:
         direction = -1 if lateral_error > 0 else 1
         if direction < 0:
             left = self._clamp_speed(self.pivot_speed)
-            right = self._clamp_speed(max(0, self.pivot_speed // 4))
+            right = 0
         else:
-            left = self._clamp_speed(max(0, self.pivot_speed // 4))
+            left = 0
             right = self._clamp_speed(self.pivot_speed)
         reason = f"pivot adjust for lateral_error {lateral_error:+.2f}\""
-        await self._execute_drive(iteration, left, right, self.pivot_duration_ms, reason)
+        current_pose = self.history[-1] if self.history else None
+        await self._execute_drive(
+            iteration,
+            left,
+            right,
+            self.pivot_duration_ms,
+            reason,
+            pose=current_pose,
+            lateral_error=lateral_error,
+            forward_error=None,
+            action="pivot",
+        )
 
     async def _execute_drive(
         self,
@@ -201,10 +230,32 @@ class CutebotFeedbackLoop:
         right: int,
         duration_ms: int,
         reason: str,
+        *,
+        pose: Optional[CutebotPose],
+        lateral_error: Optional[float],
+        forward_error: Optional[float],
+        action: str,
     ) -> None:
         print(
             f"[loop] command iter={iteration} left={left} right={right} "
             f"duration={duration_ms}ms :: {reason}"
+        )
+        if pose is not None:
+            loc = f"{pose.x_in:.1f}\", {pose.y_in:.1f}\""
+        else:
+            loc = "unknown pose"
+        if forward_error is not None:
+            fwd = f"{forward_error:+.2f}\" forward error"
+        else:
+            fwd = "forward error n/a"
+        if lateral_error is not None:
+            lat = f"{lateral_error:+.2f}\" lateral error"
+        else:
+            lat = "lateral error n/a"
+        action_desc = "nudging forward" if action == "drive" else "pivoting to realign"
+        print(
+            f"[cutebot] I'm around ({loc}). {fwd}, {lat}. "
+            f"I'm {action_desc} by running left={left}% right={right}% for {duration_ms}ms."
         )
         await self.controller.drive_timed(left, right, duration_ms)
         self.commands.append(

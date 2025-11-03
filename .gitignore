@@ -217,8 +217,9 @@ __marimo__/
 
 
 # Ignore large media
-#*.jpg
-#*.png
+*.jpg
+*.png
+*.json
 #*.mp4
 *.avi
 *.mov

@@ -1,7 +1,8 @@
 import argparse, collections, time, csv, json, os, sys
+from pathlib import Path
+
 import cv2
 import numpy as np
-from pathlib import Path
 from ultralytics import YOLO
 
 
@@ -26,14 +27,25 @@ from env_loader import load_env_file, require_env  # noqa: E402
 load_env_file()
 DEFAULT_RTSP = os.getenv("WYZE_TABLETOP_RTSP")
 
+from calibration.tabletop_geometry import (
+    BOARD_HEIGHT_FT,
+    BOARD_HEIGHT_IN,
+    BOARD_WIDTH_FT,
+    BOARD_WIDTH_IN,
+    IMAGE_POINTS,
+    image_to_world_homography,
+)
+
 # ---------------------- CONFIG (EDIT THESE) ----------------------
 # 1) Camera RTSP and YOLO model
 MODEL_PATH = "runs/detect/ultraYOLODetection1_v13/weights/best.pt"
 
 
 # 2) Map/world size in real units (e.g., feet)
-WORLD_W_FT = 3   # width of your property (X)
-WORLD_H_FT = 3   # height of your property (Y)
+WORLD_W_FT = BOARD_WIDTH_FT
+WORLD_H_FT = BOARD_HEIGHT_FT
+WORLD_W_IN = BOARD_WIDTH_IN
+WORLD_H_IN = BOARD_HEIGHT_IN
 
 # 3) Canvas (pixels) for the 2D map view (matches background image size)
 CANVAS_W = 865
@@ -42,28 +54,10 @@ CANVAS_H = 934
 # 4) Background image for the top-down map
 MAP_BACKGROUND = "demo/IndoorSimOverhead.jpg"
 BACKGROUND_PROPERTY_PTS = np.array([
-    [160,  90],   # corresponds to WORLD (0,0)
-    [705,  95],   # corresponds to (W,0)
-    [705, 770],   # corresponds to (W,H)
-    [160, 770],   # corresponds to (0,H)
-], dtype=np.float32)
-
-# 5) Four corresponding points for homography (order: TL, TR, BR, BL)
-#    IMAGE_POINTS are pixel coords in the camera frame where the property corners appear.
-#    WORLD_POINTS are real-world coords (e.g., feet) of those corners in your world frame.
-#    Define your world frame so (0,0) is the property’s top-left and (W,H) is bottom-right.
-IMAGE_POINTS = np.array([
-    [475,  390],   # top-left  corner in image (x,y)
-    [1433, 424],   # top-right
-    [1914, 1100],   # bottom-right
-    [  0,  1040],  # bottom-left
-], dtype=np.float32)
-
-WORLD_POINTS = np.array([
-    [0.0,         0.0        ],   # top-left in feet
-    [WORLD_W_FT,  0.0        ],   # top-right
-    [WORLD_W_FT,  WORLD_H_FT ],   # bottom-right
-    [0.0,         WORLD_H_FT ],   # bottom-left
+    [160, 770],   # corresponds to WORLD (0,0) bottom-left
+    [705, 770],   # corresponds to (W,0) bottom-right
+    [705,  95],   # corresponds to (W,H) top-right
+    [160,  95],   # corresponds to (0,H) top-left
 ], dtype=np.float32)
 
 # Optional: filter to specific classes (names in your model)
@@ -89,14 +83,6 @@ def color_for_id(identifier):
 def bottom_center(xyxy):
     x1, y1, x2, y2 = map(float, xyxy)
     return (x1 + x2) / 2.0, y2
-
-def build_homography(image_pts, world_pts):
-    # Homography maps image->world (planar) using Direct Linear Transform
-    H, mask = cv2.findHomography(image_pts, world_pts, method=0)
-    if H is None:
-        raise RuntimeError("Homography could not be computed. Check your points.")
-    return H
-
 
 def load_calibration_matrix(path: str) -> np.ndarray:
     """
@@ -147,7 +133,10 @@ for i in range(4):
 
 def draw_map_background():
     # Slightly brighten the background so overlays stand out
-    return cv2.convertScaleAbs(MAP_BG, alpha=1.1, beta=8)
+    canvas = cv2.convertScaleAbs(MAP_BG, alpha=1.1, beta=8)
+    draw_world_grid(canvas)
+    draw_world_axes(canvas)
+    return canvas
 
 def clamp_canvas_pt(pt):
     x = int(np.clip(pt[0], 0, CANVAS_W-1))
@@ -170,7 +159,7 @@ def draw_calibration_quad(img, pts, color=(0, 200, 255)):
             cv2.LINE_AA,
         )
 
-def draw_grid(img, step=100, color=(60, 60, 60)):
+def draw_pixel_grid(img, step=100, color=(60, 60, 60)):
     h, w = img.shape[:2]
     for x in range(0, w, step):
         cv2.line(img, (x, 0), (x, h), color, 1)
@@ -178,6 +167,71 @@ def draw_grid(img, step=100, color=(60, 60, 60)):
     for y in range(0, h, step):
         cv2.line(img, (0, y), (w, y), color, 1)
         cv2.putText(img, str(y), (2, y - 4), cv2.FONT_HERSHEY_PLAIN, 1, color, 1, cv2.LINE_AA)
+
+
+def draw_world_grid(canvas, step_in=6.0, color=(75, 75, 75)):
+    """Overlay straight world-coordinate grid lines at the requested spacing (inches)."""
+    step_ft = step_in / 12.0
+    # Vertical lines (constant X)
+    x = 0.0
+    while x <= WORLD_W_FT + 1e-6:
+        pts = world_to_canvas_pts([[x, 0.0], [x, WORLD_H_FT]])
+        p1, p2 = tuple(pts[0]), tuple(pts[1])
+        cv2.line(canvas, p1, p2, color, 1, cv2.LINE_AA)
+        label_vec = world_to_canvas_pts([[x, 0.0]])[0] + np.array([0, -12], dtype=int)
+        label_pt = (int(label_vec[0]), int(label_vec[1]))
+        cv2.putText(
+            canvas,
+            f"{int(round(x * 12))}\"",
+            label_pt,
+            cv2.FONT_HERSHEY_PLAIN,
+            1.0,
+            color,
+            1,
+            cv2.LINE_AA,
+        )
+        x += step_ft
+    # Horizontal lines (constant Y)
+    y = 0.0
+    while y <= WORLD_H_FT + 1e-6:
+        pts = world_to_canvas_pts([[0.0, y], [WORLD_W_FT, y]])
+        p1, p2 = tuple(pts[0]), tuple(pts[1])
+        cv2.line(canvas, p1, p2, color, 1, cv2.LINE_AA)
+        label_vec = world_to_canvas_pts([[0.0, y]])[0] + np.array([6, 4], dtype=int)
+        label_pt = (int(label_vec[0]), int(label_vec[1]))
+        cv2.putText(
+            canvas,
+            f"{int(round(y * 12))}\"",
+            label_pt,
+            cv2.FONT_HERSHEY_PLAIN,
+            1.0,
+            color,
+            1,
+            cv2.LINE_AA,
+        )
+        y += step_ft
+
+
+def draw_world_axes(canvas):
+    """Draw origin marker and axis labels."""
+    origin_px = world_to_canvas_pts([[0.0, 0.0]])[0]
+    origin_pt = (int(origin_px[0]), int(origin_px[1]))
+    cv2.circle(canvas, origin_pt, 6, (0, 120, 255), -1)
+    label_origin = origin_px + np.array([8, -6], dtype=int)
+    label_origin_pt = (int(label_origin[0]), int(label_origin[1]))
+    cv2.putText(canvas, "(0,0)", label_origin_pt, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2, cv2.LINE_AA)
+    cv2.putText(canvas, "(0,0)", label_origin_pt, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+    # axis labels near positive directions
+    x_axis_pt = world_to_canvas_pts([[WORLD_W_FT, 0.0]])[0]
+    label_x = x_axis_pt + np.array([-60, -10], dtype=int)
+    label_x_pt = (int(label_x[0]), int(label_x[1]))
+    cv2.putText(canvas, "X →", label_x_pt, cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2, cv2.LINE_AA)
+    cv2.putText(canvas, "X →", label_x_pt, cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1, cv2.LINE_AA)
+    y_axis_pt = world_to_canvas_pts([[0.0, WORLD_H_FT]])[0]
+    label_y = y_axis_pt + np.array([6, 24], dtype=int)
+    label_y_pt = (int(label_y[0]), int(label_y[1]))
+    cv2.putText(canvas, "↑ Y", label_y_pt, cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2, cv2.LINE_AA)
+    cv2.putText(canvas, "↑ Y", label_y_pt, cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1, cv2.LINE_AA)
 
 def main():
     ap = argparse.ArgumentParser()
@@ -206,7 +260,7 @@ def main():
         except Exception as exc:
             raise SystemExit(f"Failed to load calibration from {args.calibration}: {exc}") from exc
     else:
-        H = build_homography(IMAGE_POINTS, WORLD_POINTS)
+        H = image_to_world_homography()
 
     # Model + capture
     model = YOLO(args.model)
@@ -378,7 +432,7 @@ def main():
         # Show
         if args.show_video:
             draw_calibration_quad(annotated, IMAGE_POINTS)
-            draw_grid(annotated, step=100)
+            draw_pixel_grid(annotated, step=100)
             cv2.imshow("video", annotated)
         if args.show_map or writer:
             cv2.imshow("map", map_canvas) if args.show_map else None
