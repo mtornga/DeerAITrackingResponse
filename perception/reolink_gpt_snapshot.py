@@ -9,10 +9,12 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
 
+import numpy as np
 from openai import OpenAI
 
 from env_loader import require_env
@@ -59,6 +61,8 @@ USER_PROMPT = (
     "board_corners_pixels: object holding top_left, top_right, bottom_left, and bottom_right entries, each containing x and y pixel coordinates.\n"
     "cutebot_nose_pixels: object with numeric x and y properties for the nose tip in image pixels.\n"
     "cutebot_nose_inches: object with numeric x and y properties for the nose tip in board inches.\n"
+    "arrow_tail_pixels: pixel coordinates of the arrow decal's tail (starting point at the robot's rear).\n"
+    "arrow_tip_pixels: pixel coordinates of the arrow decal's tip (pointing toward the robot's heading).\n"
     "heading_degrees: numeric value (use the clockwise convention from the back edge).\n"
     "confidence: numeric value between 0 and 1.\n"
     "notes: short string with reasoning or observed ambiguities.\n"
@@ -78,6 +82,13 @@ class CutebotObservation:
     cutebot_nose_pixels_y: float
     cutebot_nose_inches_x: float
     cutebot_nose_inches_y: float
+    cutebot_nose_inches_projected_x: float
+    cutebot_nose_inches_projected_y: float
+    arrow_tail_pixels_x: Optional[float]
+    arrow_tail_pixels_y: Optional[float]
+    arrow_tip_pixels_x: Optional[float]
+    arrow_tip_pixels_y: Optional[float]
+    arrow_heading_degrees: Optional[float]
     heading_degrees: float
     confidence: float
     notes: str
@@ -122,6 +133,8 @@ class CutebotObservation:
                 raise ValueError(f"board_corners_pixels.{corner_name} lies outside the image bounds")
             normalised_corners[corner_name] = {"x": corner_x, "y": corner_y}
 
+        aspect_ratio_error = _validate_corner_geometry(normalised_corners)
+
         if not isinstance(nose_pixels, Mapping):
             raise ValueError("cutebot_nose_pixels must be an object with x and y numbers")
 
@@ -153,6 +166,21 @@ class CutebotObservation:
         if not (0.0 <= nose_in_x <= BOARD_LENGTH_INCHES and 0.0 <= nose_in_y <= BOARD_WIDTH_INCHES):
             raise ValueError("cutebot_nose_inches lies outside the expected arena bounds")
 
+        projected_x, projected_y = _project_nose_inches(normalised_corners, nose_px_x, nose_px_y)
+
+        tail_heading_obj = payload.get("arrow_tail_pixels")
+        tip_heading_obj = payload.get("arrow_tip_pixels")
+        arrow_tail = _normalise_optional_point(tail_heading_obj)
+        arrow_tip = _normalise_optional_point(tip_heading_obj)
+        arrow_heading = None
+        if arrow_tail and arrow_tip:
+            try:
+                arrow_heading = _compute_heading_from_arrow(
+                    arrow_tail[0], arrow_tail[1], arrow_tip[0], arrow_tip[1]
+                )
+            except ValueError:
+                arrow_heading = None
+
         return cls(
             coordinate_system=coordinate_system,
             origin=origin,
@@ -162,9 +190,16 @@ class CutebotObservation:
             cutebot_nose_pixels_y=nose_px_y,
             cutebot_nose_inches_x=nose_in_x,
             cutebot_nose_inches_y=nose_in_y,
+            cutebot_nose_inches_projected_x=projected_x,
+            cutebot_nose_inches_projected_y=projected_y,
+            arrow_tail_pixels_x=arrow_tail[0] if arrow_tail else None,
+            arrow_tail_pixels_y=arrow_tail[1] if arrow_tail else None,
+            arrow_tip_pixels_x=arrow_tip[0] if arrow_tip else None,
+            arrow_tip_pixels_y=arrow_tip[1] if arrow_tip else None,
+            arrow_heading_degrees=arrow_heading,
             heading_degrees=heading,
             confidence=confidence,
-            notes=notes,
+            notes=_append_geometry_notes(notes, aspect_ratio_error, arrow_heading),
         )
 
     def as_dict(self) -> Dict[str, Any]:
@@ -176,6 +211,17 @@ class CutebotObservation:
             "board_corners_pixels": self.board_corners_pixels,
             "cutebot_nose_pixels": {"x": self.cutebot_nose_pixels_x, "y": self.cutebot_nose_pixels_y},
             "cutebot_nose_inches": {"x": self.cutebot_nose_inches_x, "y": self.cutebot_nose_inches_y},
+            "cutebot_nose_inches_projected": {
+                "x": self.cutebot_nose_inches_projected_x,
+                "y": self.cutebot_nose_inches_projected_y,
+            },
+            "arrow_tail_pixels": None
+            if self.arrow_tail_pixels_x is None
+            else {"x": self.arrow_tail_pixels_x, "y": self.arrow_tail_pixels_y},
+            "arrow_tip_pixels": None
+            if self.arrow_tip_pixels_x is None
+            else {"x": self.arrow_tip_pixels_x, "y": self.arrow_tip_pixels_y},
+            "arrow_heading_degrees": self.arrow_heading_degrees,
             "heading_degrees": self.heading_degrees,
             "confidence": self.confidence,
             "notes": self.notes,
@@ -243,6 +289,119 @@ def query_cutebot_pose(image_path: Path = REOLINK_REFERENCE_IMAGE, client: Optio
         raise RuntimeError("Model response was not valid JSON") from exc
 
     return CutebotObservation.from_dict(payload)
+
+
+def _validate_corner_geometry(corners: Mapping[str, Mapping[str, float]]) -> float:
+    """Return the absolute difference between observed and expected aspect ratios."""
+    top_left = corners["top_left"]
+    top_right = corners["top_right"]
+    bottom_left = corners["bottom_left"]
+    bottom_right = corners["bottom_right"]
+
+    width_top = math.hypot(top_right["x"] - top_left["x"], top_right["y"] - top_left["y"])
+    width_bottom = math.hypot(bottom_right["x"] - bottom_left["x"], bottom_right["y"] - bottom_left["y"])
+    height_left = math.hypot(bottom_left["x"] - top_left["x"], bottom_left["y"] - top_left["y"])
+    height_right = math.hypot(bottom_right["x"] - top_right["x"], bottom_right["y"] - top_right["y"])
+
+    width = max((width_top + width_bottom) / 2.0, 1e-6)
+    height = (height_left + height_right) / 2.0
+    expected_ratio = BOARD_LENGTH_INCHES / BOARD_WIDTH_INCHES
+    observed_ratio = height / width
+    return abs(observed_ratio - expected_ratio)
+
+
+def _append_geometry_notes(notes: str, aspect_ratio_error: float, arrow_heading: Optional[float]) -> str:
+    extra_parts = []
+    if aspect_ratio_error > 0.1:
+        extra_parts.append(f"corner_ratio_delta≈{aspect_ratio_error:.2f}")
+    if arrow_heading is not None:
+        extra_parts.append(f"arrow_heading≈{arrow_heading:.1f}°")
+    if not extra_parts:
+        return notes
+    prefix = f"{notes} | " if notes else ""
+    return prefix + "; ".join(extra_parts)
+
+
+def _normalise_optional_point(point: Any) -> Optional[tuple[float, float]]:
+    if not isinstance(point, Mapping):
+        return None
+    try:
+        x = float(point["x"])
+        y = float(point["y"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not (0.0 <= x <= IMAGE_WIDTH_PIXELS and 0.0 <= y <= IMAGE_HEIGHT_PIXELS):
+        return None
+    return (x, y)
+
+
+def _compute_heading_from_arrow(tail_x: float, tail_y: float, tip_x: float, tip_y: float) -> float:
+    dx = tip_x - tail_x
+    dy = tip_y - tail_y
+    if dx == 0.0 and dy == 0.0:
+        raise ValueError("Arrow vector has zero length")
+    angle = math.degrees(math.atan2(dx, -dy))
+    return angle % 360.0
+
+
+def _project_nose_inches(
+    corners: Mapping[str, Mapping[str, float]], nose_px_x: float, nose_px_y: float
+) -> tuple[float, float]:
+    pixel_points = np.array(
+        [
+            [corners["top_left"]["x"], corners["top_left"]["y"]],
+            [corners["top_right"]["x"], corners["top_right"]["y"]],
+            [corners["bottom_left"]["x"], corners["bottom_left"]["y"]],
+            [corners["bottom_right"]["x"], corners["bottom_right"]["y"]],
+        ],
+        dtype=float,
+    )
+    board_points = np.array(
+        [
+            [0.0, 0.0],
+            [0.0, BOARD_WIDTH_INCHES],
+            [BOARD_LENGTH_INCHES, 0.0],
+            [BOARD_LENGTH_INCHES, BOARD_WIDTH_INCHES],
+        ],
+        dtype=float,
+    )
+
+    homography = _solve_homography(pixel_points, board_points)
+    homogeneous = homography @ np.array([nose_px_x, nose_px_y, 1.0])
+    if abs(homogeneous[2]) < 1e-8:
+        raise ValueError("Homography projection produced invalid scaling factor")
+    return homogeneous[0] / homogeneous[2], homogeneous[1] / homogeneous[2]
+
+
+def _solve_homography(pixel_points: np.ndarray, board_points: np.ndarray) -> np.ndarray:
+    if pixel_points.shape != (4, 2) or board_points.shape != (4, 2):
+        raise ValueError("Exactly four corner correspondences are required")
+
+    A = []
+    b = []
+    for (px, py), (ix, iy) in zip(pixel_points, board_points, strict=True):
+        A.append([px, py, 1.0, 0.0, 0.0, 0.0, -ix * px, -ix * py])
+        b.append(ix)
+        A.append([0.0, 0.0, 0.0, px, py, 1.0, -iy * px, -iy * py])
+        b.append(iy)
+
+    A_matrix = np.array(A, dtype=float)
+    b_vector = np.array(b, dtype=float)
+    solution, _, rank, _ = np.linalg.lstsq(A_matrix, b_vector, rcond=None)
+    if rank < 8:
+        raise ValueError("Degenerate corner configuration; homography could not be solved")
+
+    h11, h12, h13, h21, h22, h23, h31, h32 = solution
+    return np.array(
+        [
+            [h11, h12, h13],
+            [h21, h22, h23],
+            [h31, h32, 1.0],
+        ],
+        dtype=float,
+    )
+
+
 
 
 def main() -> None:
