@@ -148,9 +148,9 @@ activemq-data/
 *.sage.py
 
 # Environments
-.env
+
 .envrc
-.venv
+
 env/
 venv/
 ENV/
@@ -217,9 +217,7 @@ __marimo__/
 
 
 # Ignore large media
-*.jpg
-*.png
-*.json
+
 #*.mp4
 *.avi
 *.mov
@@ -238,3 +236,8 @@ logs/
 
 
 **/.DS_Store
+*.jpg
+*.png
+*.json
+.env
+.venv

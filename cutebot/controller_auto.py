@@ -201,7 +201,7 @@ class CutebotUARTSession(AbstractAsyncContextManager):
 
     @staticmethod
     def _clamp_speed(value: int) -> int:
-        return max(0, min(100, int(value)))
+        return max(-100, min(100, int(value)))
 
     async def drive_timed(
         self,

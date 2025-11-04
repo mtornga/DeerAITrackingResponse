@@ -6,9 +6,34 @@ from pathlib import Path
 from typing import Optional
 
 from cutebot.controller_auto import CutebotUARTSession
+from cutebot.dashboard.bus import GLOBAL_EVENT_BUS
+from cutebot.dashboard.events import HeadingSample, LogMessage
 
 from .feedback import CutebotFeedbackLoop, TargetPose
 from .tracker import TopDownCutebotTracker, ReolinkGPTTracker
+
+
+def _compute_heading_calibration(samples: list[float]) -> tuple[float, float]:
+    real = [0.0, 90.0, 180.0, 270.0]
+    measured = samples
+    sum_m = sum(measured)
+    sum_r = sum(real)
+    sum_mm = sum(m * m for m in measured)
+    sum_mr = sum(m * r for m, r in zip(measured, real))
+    n = len(measured)
+    denom = n * sum_mm - sum_m * sum_m
+    if abs(denom) < 1e-6:
+        return 0.0, 1.0
+    b = (n * sum_mr - sum_m * sum_r) / denom
+    a = (sum_r - b * sum_m) / n
+    return a, b
+
+
+def _calibrate_heading(raw: float, calibration: Optional[tuple[float, float]]) -> float:
+    if calibration is None:
+        return raw % 360.0
+    a, b = calibration
+    return (a + b * raw) % 360.0
 
 
 def _normalize_heading_diff(target: float, current: float) -> float:
@@ -29,54 +54,47 @@ async def _align_heading(
     pose_delay: float,
     min_confidence: float,
     pivot_speed: int,
+    heading_calibration: Optional[tuple[float, float]],
 ) -> bool:
-    last_diff: Optional[float] = None
-    last_direction: Optional[int] = None
-
     for attempt in range(1, max_iterations + 1):
-        pose = await tracker.get_pose(
-            retries=pose_retries,
-            delay_sec=pose_delay,
-            min_confidence=min_confidence,
-        )
-        heading = pose.heading_degrees
+        heading = await controller.request_heading(timeout=pose_delay)
         if heading is None:
-            print("[heading] Tracker did not provide heading; aborting alignment.")
-            return False
-
-        diff = _normalize_heading_diff(target_heading, heading)
+            print("[heading] Unable to read heading from Cutebot; retrying.")
+            await GLOBAL_EVENT_BUS.publish(LogMessage("Heading read timed out"))
+            await asyncio.sleep(pose_delay)
+            continue
+        calibrated = _calibrate_heading(heading, heading_calibration)
+        diff = _normalize_heading_diff(target_heading, calibrated)
         print(
-            f"[heading] attempt={attempt} heading={heading:.1f}° diff={diff:+.1f}°"
+            f"[heading] attempt={attempt} raw={heading:.1f}° calibrated={calibrated:.1f}° diff={diff:+.1f}°"
+        )
+        await GLOBAL_EVENT_BUS.publish(
+            HeadingSample(
+                raw_degrees=heading,
+                calibrated_degrees=None if heading_calibration is None else calibrated,
+            )
         )
 
         if abs(diff) <= tolerance:
             await controller.stop()
             print("[heading] Heading within tolerance.")
+            await GLOBAL_EVENT_BUS.publish(LogMessage("Heading aligned"))
             return True
 
-        if last_diff is not None and last_direction is not None:
-            if abs(diff) >= abs(last_diff) - 1.0:
-                direction = -last_direction
-            else:
-                direction = 1 if diff > 0 else -1
-        else:
-            direction = 1 if diff > 0 else -1
-
-        last_diff = diff
-        last_direction = direction
-
+        direction = 1 if diff > 0 else -1
         if direction > 0:
-            left = 0
-            right = pivot_speed
+            left = CutebotUARTSession._clamp_speed(pivot_speed)
+            right = CutebotUARTSession._clamp_speed(-pivot_speed)
         else:
-            left = pivot_speed
-            right = 0
+            left = CutebotUARTSession._clamp_speed(-pivot_speed)
+            right = CutebotUARTSession._clamp_speed(pivot_speed)
 
         await controller.drive_timed(left, right, duration_ms)
         await controller.stop()
         await asyncio.sleep(settle_sec)
 
     print("[heading] Failed to reach target heading within allotted iterations.")
+    await GLOBAL_EVENT_BUS.publish(LogMessage("Heading alignment failed", level="warn"))
     return False
 
 
@@ -237,6 +255,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Drive pulse duration in milliseconds for heading adjustments.",
     )
     parser.add_argument(
+        "--heading-calibration",
+        default=None,
+        help="Comma-separated magnetometer readings measured at real headings 0°,90°,180°,270°.",
+    )
+    parser.add_argument(
         "--pose-retries",
         type=int,
         default=20,
@@ -314,6 +337,11 @@ async def run_cycle(
     target = TargetPose(x_in=args.target_x, y_in=args.target_y, heading_degrees=args.target_heading)
 
     async with CutebotUARTSession(verbose=args.controller_verbose) as controller:
+        heading_stream_enabled = False
+        if args.target_heading is not None:
+            await controller.enable_heading_stream(True)
+            heading_stream_enabled = True
+
         feedback = CutebotFeedbackLoop(
         controller=controller,
         tracker=tracker,
@@ -355,14 +383,31 @@ async def run_cycle(
                     pose_delay=args.pose_delay,
                     min_confidence=args.min_conf,
                     pivot_speed=args.pivot_speed,
+                    heading_calibration=args.heading_calibration_tuple,
                 )
         finally:
             tracker.close()
+            if heading_stream_enabled:
+                try:
+                    await controller.enable_heading_stream(False)
+                except Exception:
+                    pass
 
 
 async def main_async() -> None:
     parser = build_arg_parser()
     args = parser.parse_args()
+
+    if args.heading_calibration:
+        try:
+            samples = [float(x.strip()) for x in args.heading_calibration.split(",") if x.strip()]
+        except ValueError as exc:
+            parser.error(f"Invalid heading calibration values: {exc}")
+        if len(samples) != 4:
+            parser.error("--heading-calibration requires four values for 0°,90°,180°,270°")
+    else:
+        samples = [0.0, 90.0, 180.0, 270.0]
+    args.heading_calibration_tuple = _compute_heading_calibration(samples)
 
     for i in range(1, args.cycles + 1):
         print(f"[cycle {i}] Starting move towards ({args.target_x}, {args.target_y})\"")

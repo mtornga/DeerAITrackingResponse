@@ -124,16 +124,9 @@ class CutebotFeedbackLoop:
                     continue
 
                 if forward_error > self.pos_tolerance_in:
-                    await self._drive_towards(iteration, lateral_error, forward_error)
+                    await self._drive_towards(iteration, lateral_error, forward_error, direction=1)
                 elif forward_error < -self.pos_tolerance_in:
-                    msg = (
-                        f"Overshoot detected (forward_error={forward_error:+.2f}\"). "
-                        "Reduce speed or duration."
-                    )
-                    print("[loop] Warning: overshoot detected; stopping to avoid moving past target.")
-                    await self.controller.stop()
-                    failure_reason = msg
-                    raise RuntimeError(msg)
+                    await self._drive_towards(iteration, lateral_error, forward_error, direction=-1)
                 else:
                     await self._pivot_adjust(iteration, lateral_error)
 
@@ -154,7 +147,7 @@ class CutebotFeedbackLoop:
         )
 
     def _clamp_speed(self, value: int) -> int:
-        return max(0, min(100, value))
+        return max(-100, min(100, value))
 
     def _pick_duration(self, distance_in: float) -> int:
         """
@@ -173,14 +166,15 @@ class CutebotFeedbackLoop:
         iteration: int,
         lateral_error: float,
         forward_error: float,
+        direction: int,
     ) -> None:
         distance_in = min(abs(forward_error) * 0.6, self.max_advance_in)
         duration_ms = self._pick_duration(distance_in)
-        base_speed = self.forward_speed
+        base_speed = self.forward_speed * direction
         turn_delta = self._compute_turn_delta(lateral_error)
 
-        left = self._clamp_speed(base_speed - turn_delta)
-        right = self._clamp_speed(base_speed + turn_delta)
+        left = self._clamp_speed(base_speed - direction * turn_delta)
+        right = self._clamp_speed(base_speed + direction * turn_delta)
 
         reason = (
             f"forward_error {forward_error:+.2f}\" with lateral_error {lateral_error:+.2f}\" "
@@ -205,9 +199,9 @@ class CutebotFeedbackLoop:
         direction = -1 if lateral_error > 0 else 1
         if direction < 0:
             left = self._clamp_speed(self.pivot_speed)
-            right = 0
+            right = self._clamp_speed(-self.pivot_speed)
         else:
-            left = 0
+            left = self._clamp_speed(-self.pivot_speed)
             right = self._clamp_speed(self.pivot_speed)
         reason = f"pivot adjust for lateral_error {lateral_error:+.2f}\""
         current_pose = self.history[-1] if self.history else None

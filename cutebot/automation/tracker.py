@@ -284,6 +284,7 @@ class ReolinkGPTTracker:
         transport: str = "tcp",
         cleanup_snapshots: bool = True,
         capture_timeout_sec: float = 20.0,
+        transform_path: Optional[Path | str] = Path("calibration/reolink_gpt/transform.json"),
     ) -> None:
         load_env_file()
         self.rtsp_url = rtsp_url or require_env("REOLINK_E1_RTSP")
@@ -294,6 +295,27 @@ class ReolinkGPTTracker:
         self.cleanup_snapshots = cleanup_snapshots
         self.capture_timeout_sec = capture_timeout_sec
         self._last_observation: Optional[CutebotObservation] = None
+        self._transform_matrix: Optional[np.ndarray] = None
+        self._transform_offset: Optional[np.ndarray] = None
+
+        if transform_path:
+            t_path = Path(transform_path)
+            if t_path.exists():
+                try:
+                    data = json.loads(t_path.read_text())
+                    matrix = np.asarray(data.get("matrix"), dtype=float)
+                    offset = np.asarray(data.get("offset"), dtype=float)
+                    if matrix.shape != (2, 2) or offset.shape != (2,):
+                        raise ValueError("Transform matrix must be 2x2 with 2D offset.")
+                    self._transform_matrix = matrix
+                    self._transform_offset = offset
+                    print(f"[tracker] Loaded affine transform from {t_path}")
+                except Exception as exc:
+                    print(
+                        f"[tracker] Warning: failed to load transform from {t_path} "
+                        f"({exc}); falling back to GPT inches."
+                    )
+
 
     def start(self) -> None:
         return
@@ -340,8 +362,35 @@ class ReolinkGPTTracker:
                 except Exception:
                     pass
 
+        payload = observation.as_dict()
         forward_in = float(observation.cutebot_nose_inches_projected_x)
         lateral_in = float(observation.cutebot_nose_inches_projected_y)
+        calibrated = None
+
+        projected = payload.get("cutebot_nose_inches_projected")
+        if (
+            self._transform_matrix is not None
+            and self._transform_offset is not None
+            and isinstance(projected, dict)
+        ):
+            try:
+                gpt_vec = np.asarray(
+                    [float(projected.get("x", forward_in)), float(projected.get("y", lateral_in))],
+                    dtype=float,
+                )
+                corrected = self._transform_matrix @ gpt_vec + self._transform_offset
+                lateral_in = float(corrected[0])
+                forward_in = float(corrected[1])
+                calibrated = "affine_transform"
+            except (TypeError, ValueError):
+                pass
+
+        payload["calibrated_inches"] = {
+            "forward": forward_in,
+            "lateral": lateral_in,
+        }
+        if calibrated:
+            payload["calibrated_inches"]["source"] = calibrated
 
         x_ft = lateral_in / 12.0
         y_ft = forward_in / 12.0
@@ -352,7 +401,7 @@ class ReolinkGPTTracker:
             confidence=float(observation.confidence),
             timestamp=time.time(),
             heading_degrees=float(observation.heading_degrees),
-            raw_payload=observation.as_dict(),
+            raw_payload=payload,
         )
 
     async def get_pose(
