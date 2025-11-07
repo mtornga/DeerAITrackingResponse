@@ -218,7 +218,7 @@ __marimo__/
 
 # Ignore large media
 
-#*.mp4
+
 *.avi
 *.mov
 *.pt
@@ -230,6 +230,7 @@ outputs/
 cvat/
 runs/
 logs/
+tmp/
 # But keep structure files
 !data/README.md
 !models/config.yaml.DS_Store
@@ -239,5 +240,6 @@ logs/
 *.jpg
 *.png
 *.json
-.env
-.venv
+*.env
+*.venv
+*.mp4

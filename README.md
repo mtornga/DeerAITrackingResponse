@@ -18,7 +18,7 @@ The milestones here are:
 For indoor work Wyze should be used primarily to detect and suggest a location. This simulates the low angle outdoor camera that gets a side view of animals.
 The Reolink E1 should be used to better determine the location of objects in the 24x30 tabletop.
 
-The board is perceived from multiple angles, but bottom left from the viewpoint of the Wyze camera is considered 0",0", top left is 0",24", top right is 30",24", bottom right is 30",0". An object facing directly towards the plants has a heading of 0 degrees.
+The board is perceived from multiple angles, but bottom left from the viewpoint of the Wyze camera is considered 0",0", top left is 0",24", top right is 30",24", bottom right is 30",0". 
 
 
 ### Outdoor solution

@@ -1,3 +1,5 @@
 Least squares
 affine
 homography
+AprilTags
+add a Kalman motion
