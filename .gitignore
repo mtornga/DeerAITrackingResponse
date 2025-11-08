@@ -221,16 +221,10 @@ __marimo__/
 
 *.avi
 *.mov
-*.pt
+
 *.onnx
 *.zip
-data/
-models/
-outputs/
-cvat/
-runs/
-logs/
-tmp/
+
 # But keep structure files
 !data/README.md
 !models/config.yaml.DS_Store
@@ -243,3 +237,12 @@ tmp/
 *.env
 *.venv
 *.mp4
+*.pt
+*.mkv
+data/
+models/
+outputs/
+cvat/
+runs/
+logs/
+tmp/
