@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -35,6 +36,7 @@ from env_loader import load_env_file, require_env
 
 
 DEFAULT_OUTPUT_ROOT = Path("runs/live/segments")
+DEFAULT_ANALYSIS_ROOT = Path("runs/live/analysis")
 DEFAULT_LOG_PATH = Path("logs/reolink_stream_ingest.log")
 
 
@@ -82,6 +84,15 @@ def prune_segments(root: Path, retention_hours: float) -> None:
                 day_dir.rmdir()
         except OSError:
             continue
+
+
+def mirror_to_analysis(segment_path: Path, capture_root: Path, analysis_root: Path) -> Path:
+    segment_abs = segment_path.resolve()
+    relative = segment_abs.relative_to(capture_root)
+    target_path = analysis_root / relative
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(segment_abs, target_path)
+    return target_path
 
 
 def build_ffmpeg_command(
@@ -161,6 +172,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--stream-url", help="RTSP URL to record (defaults to REOLINK_3_RTSP in .env).")
     parser.add_argument("--segment-length", type=int, default=20, help="Clip length in seconds.")
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_ROOT, help="Destination for segments.")
+    parser.add_argument(
+        "--analysis-dir",
+        type=Path,
+        default=DEFAULT_ANALYSIS_ROOT,
+        help="Mirror completed segments into this directory for downstream processing.",
+    )
     parser.add_argument("--retention-hours", type=float, default=6.0, help="Hours of footage to retain.")
     parser.add_argument("--warmup-seconds", type=int, default=2, help="Delay before each ffmpeg run.")
     parser.add_argument("--log-file", type=Path, default=DEFAULT_LOG_PATH, help="Path for the ingest log.")
@@ -193,6 +210,10 @@ def main() -> int:
     stream_url = args.stream_url or require_env("REOLINK_3_RTSP")
     output_dir = args.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
+    analysis_dir = args.analysis_dir
+    analysis_dir.mkdir(parents=True, exist_ok=True)
+    capture_root = output_dir.resolve()
+    analysis_root = analysis_dir.resolve()
     suffix = f".{args.container}"
 
     logging.info("Starting ingest loop -> %s", output_dir)
@@ -227,6 +248,12 @@ def main() -> int:
                 destination.unlink(missing_ok=True)
             time.sleep(5)
         else:
+            if analysis_root != capture_root:
+                try:
+                    mirrored = mirror_to_analysis(destination, capture_root, analysis_root)
+                    logging.info("Mirrored segment to %s", mirrored)
+                except Exception as exc:
+                    logging.warning("Failed to mirror %s: %s", destination, exc)
             prune_segments(output_dir, args.retention_hours)
 
     logging.info("Ingest loop stopped")

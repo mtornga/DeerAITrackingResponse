@@ -1,6 +1,15 @@
 # Purpose 
 
-This is a software platform for managing deer and other wildlife on the user's property
+This is a software platform for managing deer and other wildlife on the user's property. 
+
+# Approach
+
+A full spatial intelligence system. 
+1. Detection → find deer and other species in each frame.
+2. Tracking → persist identities across frames.
+3. Localization → convert pixel positions into yard coordinates (x, y in feet or inches).
+4. Behavior state → classify posture, speed, direction.
+5. Trajectory analysis → store and forecast path history.
 
 ## Structure
 
@@ -34,7 +43,7 @@ Milestones for outdoor:
 
 ## Configuration
 
-Create a `.env` file in the project root (see the checked-in sample) with the RTSP connection details for the Wyze camera:
+Create a `.env` file in the project root (see the checked-in sample) with the RTSP connection details for the cameras:
 
 ```
 WYZE_TABLETOP_RTSP="rtsp://user:password@camera-ip/live"
@@ -43,3 +52,12 @@ WYZE_TABLETOP_RTSP="rtsp://user:password@camera-ip/live"
 Scripts will read this variable automatically; override it via CLI flags when needed.
 
 Project artifacts are now in the s3 bucket wildlife-ugv on us-east-2
+
+## Resources
+MacBook Pro 2017 Intel i7 Radeon Pro 560 16gb memory
+Wyze Cam v2
+Reolink E1 Zoom
+Reolink Duo 3 PoE
+CuteBot Pro with Micro:bit v2
+Apriltags
+IR floodlight

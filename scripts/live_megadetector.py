@@ -34,7 +34,7 @@ _ensure_repo_root_on_path()
 from env_loader import load_env_file
 
 
-DEFAULT_SEGMENTS_DIR = Path("runs/live/segments")
+DEFAULT_SEGMENTS_DIR = Path("runs/live/analysis")
 DEFAULT_DETECTIONS_DIR = Path("runs/live/detections")
 DEFAULT_EVENTS_DIR = Path("runs/live/events")
 DEFAULT_MODEL_PATH = Path("models/md_v5a.0.0.pt")

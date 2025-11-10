@@ -122,17 +122,26 @@ Per frame:
 
 Finally, render the tracks on top of the raw frames:
 
+There is now a reusable CLI under `scripts/track_megadetector_kf.py`:
+
 ```bash
 source .venv/bin/activate
-python scripts/track_deer_kf.py \
-  --frames tmp/megadetector_frames_Backyard-00-064458-064505 \
-  --detections runs/megadetector/Backyard-00-064458-064505.json \
-  --descriptor models/MegaDescriptor-T-CNN-288/pytorch_model.bin \
-  --output-json runs/megadetector/Backyard-00-064458-064505_tracks_kf.json \
-  --output-video runs/megadetector/Backyard-00-064458-064505_tracked_kf.mp4
+python scripts/track_megadetector_kf.py \
+  --frames-dir tmp/megadetector_frames_segment_092731 \
+  --detections-json runs/megadetector/segment_092731.json \
+  --class-map 1=deer \
+  --conf-threshold 0.2 \
+  --max-detections-per-frame 4 \
+  --max-tracks-per-class 4 \
+  --max-missed 30 \
+  --output-json runs/megadetector/segment_092731_tracks_kf.json \
+  --output-video runs/megadetector/segment_092731_tracked_kf.mp4
 ```
 
-(*`scripts/track_deer_kf.py` contains the exact logic described above — feel free to adapt it for more animals or for swapping in the L‑384 descriptor.*)
+Key flags:
+- `--class-map`: map MegaDetector `category_id` → label prefix (repeat per class).
+- `--max-detections-per-frame` / `--max-tracks-per-class`: optional caps if you expect only a few animals at once.
+- `--descriptor-weights`: swap in the Swin-L weights if needed.
 
 Outputs:
 - `runs/megadetector/<video>_tracks_kf.json`: frame→[{label, bbox, conf}] mapping.
