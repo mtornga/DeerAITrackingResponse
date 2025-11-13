@@ -1,0 +1,9 @@
+path: data/datasets/deer_det_v01
+train: images/train
+val: images/val
+test: images/test
+names:
+  0: deer
+  1: unknown_animal
+  2: person
+  3: apriltag
