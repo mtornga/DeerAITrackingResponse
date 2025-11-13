@@ -34,13 +34,26 @@ _ensure_repo_root_on_path()
 from env_loader import load_env_file
 
 
-DEFAULT_SEGMENTS_DIR = Path("runs/live/analysis")
-DEFAULT_DETECTIONS_DIR = Path("runs/live/detections")
-DEFAULT_EVENTS_DIR = Path("runs/live/events")
+def default_live_path(relative: str) -> Path:
+    """Prefer the shared USB mount when it is available."""
+    overrides = []
+    shared_root = os.environ.get("DEER_SHARE_ROOT")
+    if shared_root:
+        overrides.append(Path(shared_root).expanduser())
+    overrides.append(Path("/srv/deer-share"))
+    for root in overrides:
+        if root.exists():
+            return root / relative
+    return Path(relative)
+
+
+DEFAULT_SEGMENTS_DIR = default_live_path("runs/live/analysis")
+DEFAULT_DETECTIONS_DIR = default_live_path("runs/live/detections")
+DEFAULT_EVENTS_DIR = default_live_path("runs/live/events")
 DEFAULT_MODEL_PATH = Path("models/md_v5a.0.0.pt")
 DEFAULT_MEGADETECTOR_SCRIPT = Path("tmp/MegaDetector/detection/process_video.py")
 DEFAULT_LOG_PATH = Path("logs/live_megadetector.log")
-DEFAULT_EVENTS_LOG = Path("runs/live/events.log")
+DEFAULT_EVENTS_LOG = default_live_path("runs/live/events.log")
 PYTHONPATH_APPEND = os.pathsep.join(["tmp/MegaDetector", "tmp/ai4eutils", "tmp/yolov5"])
 INTERESTING_CATEGORIES = {"1", "2"}  # 1=animal, 2=person
 
@@ -191,10 +204,12 @@ def run_megadetector(
         cmd.extend(["--frame_sample", str(args.frame_sample)])
 
     env = os.environ.copy()
-    existing_path = env.get("PYTHONPATH")
-    env["PYTHONPATH"] = (
-        PYTHONPATH_APPEND if not existing_path else f"{PYTHONPATH_APPEND}{os.pathsep}{existing_path}"
-    )
+    script_str = str(args.megadetector_script)
+    if "tmp/MegaDetector" in script_str:
+        existing_path = env.get("PYTHONPATH")
+        env["PYTHONPATH"] = (
+            PYTHONPATH_APPEND if not existing_path else f"{PYTHONPATH_APPEND}{os.pathsep}{existing_path}"
+        )
 
     logging.info("Running MegaDetector on %s", segment_path)
     result = subprocess.run(cmd, env=env, check=False)

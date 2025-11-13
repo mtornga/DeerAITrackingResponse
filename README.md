@@ -2,6 +2,9 @@
 
 This is a software platform for managing deer and other wildlife on the user's property. 
 
+Inspired by the University of Minnesota paper "Geofenced Unmanned Aerial Robotic Defender for
+Deer Detection and Deterrence (GUARD)" https://arxiv.org/pdf/2505.10770 /DeerAITrackingResponse/docs/GeofencedUARDDeer.pdf
+
 # Approach
 
 A full spatial intelligence system. 
@@ -61,3 +64,13 @@ Reolink Duo 3 PoE
 CuteBot Pro with Micro:bit v2
 Apriltags
 IR floodlight
+Ubuntu server with GTX 3080
+
+### Shared storage
+- Samba share: `smb://192.168.68.71/deer-share`
+- Credentials: username `mtornga`, password `mtornga`
+- Server mount point: `/srv/deer-share` (USB drive UUID `F04815E200F815F8`)
+- Mac client example:
+  - `mkdir -p ~/DeerShare`
+  - `mount_smbfs //mtornga@192.168.68.71/deer-share ~/DeerShare`
+- Expect a `hello-from-server.txt` smoke-test file at the root after provisioning. Use this share for exchanging tabletop captures and detector outputs that do not belong in the repo.

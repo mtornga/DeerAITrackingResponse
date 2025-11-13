@@ -12,6 +12,7 @@ import subprocess
 import sys
 import time
 from datetime import UTC, datetime, timedelta
+from enum import Enum
 from pathlib import Path
 from typing import Optional
 
@@ -35,8 +36,22 @@ _ensure_repo_root_on_path()
 from env_loader import load_env_file, require_env
 
 
-DEFAULT_OUTPUT_ROOT = Path("runs/live/segments")
-DEFAULT_ANALYSIS_ROOT = Path("runs/live/analysis")
+def default_live_path(relative: str) -> Path:
+    """Prefer the shared USB mount when available."""
+    overrides = []
+    shared_root = os.environ.get("DEER_SHARE_ROOT")
+    if shared_root:
+        overrides.append(Path(shared_root).expanduser())
+    overrides.append(Path("/srv/deer-share"))
+    for root in overrides:
+        if root.exists():
+            return root / relative
+    return Path(relative)
+
+
+DEFAULT_OUTPUT_ROOT = default_live_path("runs/live/segments")
+DEFAULT_ANALYSIS_ROOT = default_live_path("runs/live/analysis")
+DEFAULT_REMOTE_ROOT = default_live_path("runs/live/remote")
 DEFAULT_LOG_PATH = Path("logs/reolink_stream_ingest.log")
 
 
@@ -86,11 +101,40 @@ def prune_segments(root: Path, retention_hours: float) -> None:
             continue
 
 
-def mirror_to_analysis(segment_path: Path, capture_root: Path, analysis_root: Path) -> Path:
+class MirrorMode(str, Enum):
+    COPY = "copy"
+    HARDLINK = "hardlink"
+    SYMLINK = "symlink"
+    NONE = "none"
+
+
+def mirror_to_analysis(
+    segment_path: Path,
+    capture_root: Path,
+    analysis_root: Path,
+    mode: MirrorMode,
+) -> Optional[Path]:
+    if mode is MirrorMode.NONE:
+        return None
     segment_abs = segment_path.resolve()
     relative = segment_abs.relative_to(capture_root)
     target_path = analysis_root / relative
     target_path.parent.mkdir(parents=True, exist_ok=True)
+    if target_path == segment_abs:
+        return target_path
+    if target_path.exists() or target_path.is_symlink():
+        target_path.unlink()
+    if mode is MirrorMode.HARDLINK:
+        try:
+            os.link(segment_abs, target_path)
+            return target_path
+        except OSError as exc:
+            logging.warning("Hardlink failed (%s), falling back to copy", exc)
+            mode = MirrorMode.COPY
+    if mode is MirrorMode.SYMLINK:
+        link_target = os.path.relpath(segment_abs, start=target_path.parent)
+        os.symlink(link_target, target_path)
+        return target_path
     shutil.copy2(segment_abs, target_path)
     return target_path
 
@@ -178,6 +222,30 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_ANALYSIS_ROOT,
         help="Mirror completed segments into this directory for downstream processing.",
     )
+    parser.add_argument(
+        "--remote-dir",
+        type=Path,
+        default=DEFAULT_REMOTE_ROOT,
+        help="Secondary mirror root (e.g., external drive).",
+    )
+    parser.add_argument(
+        "--remote-mirror-mode",
+        choices=[mode.value for mode in MirrorMode],
+        default=MirrorMode.HARDLINK.value,
+        help="Strategy for populating the remote directory.",
+    )
+    parser.add_argument(
+        "--analysis-mirror-mode",
+        choices=[mode.value for mode in MirrorMode],
+        default=MirrorMode.COPY.value,
+        help="Strategy for populating the analysis directory (copy/hardlink/symlink/none).",
+    )
+    parser.add_argument(
+        "--analysis-retention-hours",
+        type=float,
+        default=None,
+        help="Retention window for the analysis directory (defaults to --retention-hours).",
+    )
     parser.add_argument("--retention-hours", type=float, default=6.0, help="Hours of footage to retain.")
     parser.add_argument("--warmup-seconds", type=int, default=2, help="Delay before each ffmpeg run.")
     parser.add_argument("--log-file", type=Path, default=DEFAULT_LOG_PATH, help="Path for the ingest log.")
@@ -215,6 +283,10 @@ def main() -> int:
     capture_root = output_dir.resolve()
     analysis_root = analysis_dir.resolve()
     suffix = f".{args.container}"
+    analysis_mode = MirrorMode(args.analysis_mirror_mode)
+    analysis_retention = args.analysis_retention_hours
+    if analysis_retention is None:
+        analysis_retention = args.retention_hours
 
     logging.info("Starting ingest loop -> %s", output_dir)
 
@@ -248,13 +320,21 @@ def main() -> int:
                 destination.unlink(missing_ok=True)
             time.sleep(5)
         else:
-            if analysis_root != capture_root:
+            targets = []
+            if analysis_mode is not MirrorMode.NONE and analysis_root != capture_root:
+                targets.append((analysis_root, analysis_mode))
+            if args.remote_dir:
+                targets.append((args.remote_dir, MirrorMode(args.remote_mirror_mode)))
+            for root_dir, mode in targets:
                 try:
-                    mirrored = mirror_to_analysis(destination, capture_root, analysis_root)
-                    logging.info("Mirrored segment to %s", mirrored)
+                    mirrored = mirror_to_analysis(destination, capture_root, Path(root_dir), mode)
+                    if mirrored:
+                        logging.info("Mirrored segment to %s (%s)", mirrored, mode.value)
                 except Exception as exc:
                     logging.warning("Failed to mirror %s: %s", destination, exc)
             prune_segments(output_dir, args.retention_hours)
+            if analysis_mode is not MirrorMode.NONE and analysis_root != capture_root:
+                prune_segments(analysis_root, analysis_retention)
 
     logging.info("Ingest loop stopped")
     return 0

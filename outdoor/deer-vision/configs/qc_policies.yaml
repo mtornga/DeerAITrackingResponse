@@ -1,0 +1,13 @@
+#In response to the question "in defining "perfect", how would i express to code and codex that I don't mind if a small deer that far away in the dark is ok to miss? I had annotated it in CVAT because it was visible to me."
+eval:
+  conf: 0.35
+  iou: 0.45
+  agnostic_nms: true
+  min_gt_area_frac: 0.006     # ignore FN below this
+  min_gt_short_px: 16
+  size_buckets: [small=0-1.0%, medium=1.0-4.0%, large=>4.0%]
+train:
+  drop_tiny_area_frac: 0.004  # don’t train on ultra-tiny
+  drop_tiny_short_px: 12
+  #warm_start: "models/yolov8s6_best.pt" not commited to a warm start model yet. 
+  imgsz: 1280

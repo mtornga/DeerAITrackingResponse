@@ -223,7 +223,7 @@ __marimo__/
 *.mov
 
 *.onnx
-*.zip
+
 
 # But keep structure files
 !data/README.md
@@ -241,6 +241,8 @@ __marimo__/
 *.mp4
 *.pt
 *.mkv
+*.zip
+*.txt
 data/
 models/
 outputs/
@@ -248,3 +250,4 @@ cvat/
 runs/
 logs/
 tmp/
+cvat-indoor/

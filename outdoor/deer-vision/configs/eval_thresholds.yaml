@@ -1,0 +1,5 @@
+map50_min: 0.80
+recall_min: 0.85
+fp_per_min_max_day: 0.10
+fp_per_min_max_night: 0.25
+latency_ms_p95_max: 40

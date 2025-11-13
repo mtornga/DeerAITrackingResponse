@@ -1,0 +1,32 @@
+stages:
+  frames:
+    cmd: python scripts/extract_frames.py --src data/raw/clips --dst data/raw/frames --stride 5
+    deps:
+      - scripts/extract_frames.py
+      - data/raw/clips
+    outs:
+      - data/raw/frames
+  autolabel:
+    cmd: python scripts/auto_label.py --src data/raw/frames --out data/interim/autolabel --conf 0.2
+    deps:
+      - scripts/auto_label.py
+      - data/raw/frames
+      - ../../yolov8n.pt
+    outs:
+      - data/interim/autolabel
+  split:
+    cmd: python scripts/split_dataset.py --src data/interim/autolabel --dst data/datasets/deer_det_v01
+    deps:
+      - scripts/split_dataset.py
+      - data/interim/autolabel
+    outs:
+      - data/datasets/deer_det_v01
+  train:
+    cmd: python scripts/train.py --data configs/data_deer.yaml --name yolov8n_det_v01
+    deps:
+      - scripts/train.py
+      - configs/data_deer.yaml
+      - configs/hyp_det.yaml
+      - data/datasets/deer_det_v01
+    outs:
+      - models/yolov8n_det_v01
