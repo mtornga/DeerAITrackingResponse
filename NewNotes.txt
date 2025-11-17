@@ -1,13 +1,13 @@
 Deer vision vision:
 This system accurately detects, tracks, and identifies Missouri backyard wildlife using the available hardware listed in the README and env file. 
 
-Detection, tracking, and identification can come from any software. Reolink has detection and bounding. YOLOv8, MegadetectorV5, TrapDetecorR, gpt-5, and other models, classifiers, and LLMs have been experimented with to accomplish this system. 
+Detection, tracking, and identification can come from any software. Reolink has detection and bounding. YOLOv8, MegadetectorV5, TrapDetecorR, gpt-5, and other models, classifiers, and LLMs have been experimented with to accomplish this system. The RT-DETR model is being talked about as the best-in-class model for this type of work.
 
 The current idea is to use agents and sub-agents to do the Computer Vision and/or Machine Learning engineering. The agents can pull models from github/huggingface/etc. The agents can make use of the GTX 3080 for fine tuning and inference. Use of the camera(s), storage drive, internet, mac, ubuntu server, git, web servers like streamlit and CVAT are open for use by the agents. 
 
 Further, the idea is to depend on the developer, mtornga, only as much as necessary. mtornga is not an expert in computer vision but wants to learn. mtornga is the Product Owner of Deer Vision. mtornga owns the definition of done and tolerances for quality. 
 
-Further, the agents should work as autonomously as possible but leverage mtornga for adding new hardware to the system, or picking between two video outputs. 
+Further, the agents should work as autonomously as possible but leverage mtornga for adding new hardware to the system, or picking between two video outputs. mtornga can use CVAT to label clips when absolutely necessary.
 
 Agents should crystalize a quiver of skills and refine that list of skills rather than starting from scratch. Examples of skills would be like "PresentVideoAndCaptureUserInput.py" or "EvaluateNewClipAgainstModels.sh". 
 
