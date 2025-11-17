@@ -3,10 +3,16 @@ This system accurately detects, tracks, and identifies Missouri backyard wildlif
 
 Detection, tracking, and identification can come from any software. Reolink has detection and bounding. YOLOv8, MegadetectorV5, TrapDetecorR, gpt-5, and other models, classifiers, and LLMs have been experimented with to accomplish this system. 
 
-The current idea is to use agents and sub-agents to do the Computer Vision and/or Machine Learning engineering. The agents can pull models from github/huggingface/etc. The agents can make use of the GTX 3080 for fine tuning and inference. Use of the camera(s), storage drive, internet, mac, ubuntu server, web servers like streamlit and CVAT are open for use by the agents. 
+The current idea is to use agents and sub-agents to do the Computer Vision and/or Machine Learning engineering. The agents can pull models from github/huggingface/etc. The agents can make use of the GTX 3080 for fine tuning and inference. Use of the camera(s), storage drive, internet, mac, ubuntu server, git, web servers like streamlit and CVAT are open for use by the agents. 
 
 Further, the idea is to depend on the developer, mtornga, only as much as necessary. mtornga is not an expert in computer vision but wants to learn. mtornga is the Product Owner of Deer Vision. mtornga owns the definition of done and tolerances for quality. 
 
 Further, the agents should work as autonomously as possible but leverage mtornga for adding new hardware to the system, or picking between two video outputs. 
 
+Agents should crystalize a quiver of skills and refine that list of skills rather than starting from scratch. Examples of skills would be like "PresentVideoAndCaptureUserInput.py" or "EvaluateNewClipAgainstModels.sh". 
+
+Text is very cheap! When creating scripts, document decisions, bugs, theories in comments liberally. When creating new artifacts like a directory of marked-up error frames from a video, add a text file alongside that explains when, why, and how the artifact was created. Many agents and developers will work on this project and the breadcrumbs keep us moving forward rather than spinning in circles. 
+
 Experimentation and refinement are project goals. For that reason the fine-tuning and evaluation inputs should not be discarded. When a new computer vision model like YOLOv20 comes out, we want to have all the clips, ground truth and so on to start back at "zero" and see how a new component performs versus the evaluation dataset. 
+
+The project operates on a daily cadence. The deer invade the yard almost nightly. There are also pest skunks, raccoons, and opossum. The immediate goal is as follows: In the morning, mtornga should be presented with clips that need user input. False positives, false negatives, quality issues, unknown animals, and so on. The fidelity of detection, tracking, classification should improve based on this user feedback. Within a few weeks we should have enough edge cases solved that the clip ingestion and processing is reliable. We may be solving for daytime, dusk, far away animal, rain, snow, fast animal, person with lawnmower, spiderweb in front of the camera, and so on. 
