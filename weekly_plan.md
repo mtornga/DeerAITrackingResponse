@@ -74,9 +74,10 @@ This plan focuses on bridging the gap between the Mac (Control) and Ubuntu (Comp
 
 6.  **Remote Execution Prototype:** Create a script `scripts/run_remote_inference.sh` on the Mac that successfully triggers a simple python script on the Ubuntu machine (e.g., "Hello GPU") via SSH.
     - Plan: Use passwordless SSH (key-based auth) from Mac to Ubuntu so agents can safely trigger remote jobs.
-    - TODO (repo): Add `scripts/run_remote_inference.sh` that reads SSH target and project path from `.env` (e.g., `DEER_REMOTE_HOST`, `DEER_REMOTE_PROJECT_ROOT`) and runs a tiny GPU test script.
-    - TODO (remote): Implement a simple `scripts/hello_gpu.py` that prints device info (e.g., `torch.cuda.is_available()`, current GPU name).
-    - Note: This is the first concrete bridge from the "controller" Mac to the "muscle" Ubuntu, enabling the agent workflows described in `NewNotes.txt`.
+    - Status (repo): `scripts/run_remote_inference.sh` now exists; it loads `.env` for `DEERVISION_UBUNTU_*`, falls back to `mtornga@192.168.68.71`, and assumes `/home/<user>/projects/DeerAITrackingResponse` as the canonical remote repo path (ignoring legacy `deer-vision` paths).
+    - Status (remote): `scripts/hello_gpu.py` is checked into the repo; it prints the torch version, whether CUDA is available, and basic GPU device info when running under the project `.venv`.
+    - Status (end-to-end): Running `scripts/run_remote_inference.sh` from the Mac successfully SSHs to Ubuntu, activates `.venv`, and reports `torch 2.2.2+cu121` with `cuda_available=True` on the RTX 3080.
+    - Note: This is the first concrete bridge from the "controller" Mac to the "muscle" Ubuntu, enabling the agent workflows described in `NewNotes.txt`. Future agents can treat this script as the template for more complex remote jobs.
 
 7.  **Daily Review Workflow Skeleton:** Create a placeholder script `scripts/daily_review.py` that simulates the "morning review" process: finding new clips on the share, and listing them for the user.
     - Idea: Start with a CLI that lists unreviewed clips and prints suggested actions; later promote to a Streamlit or other UI.
