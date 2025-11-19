@@ -54,13 +54,13 @@ DEFAULT_SEGMENTS_DIR = default_live_path("runs/live/analysis")
 DEFAULT_DETECTIONS_DIR = default_live_path("runs/live/detections")
 DEFAULT_EVENTS_DIR = default_live_path("runs/live/events")
 DEFAULT_MODEL_PATH = Path("models/md_v5a.0.0.pt")
-DEFAULT_MEGADETECTOR_SCRIPT = EXTERNAL_ROOT / "MegaDetector" / "detection" / "process_video.py"
+# Use the local mdv5_process_video wrapper by default; it emits MegaDetector-style JSON
+# using Ultralytics weights, avoiding reliance on the upstream CameraTraps entrypoint.
+DEFAULT_MEGADETECTOR_SCRIPT = REPO_ROOT / "scripts" / "mdv5_process_video.py"
 DEFAULT_LOG_PATH = Path("logs/live_megadetector.log")
 DEFAULT_EVENTS_LOG = default_live_path("runs/live/events.log")
 PYTHONPATH_APPEND = os.pathsep.join(
     [
-        str(EXTERNAL_ROOT / "MegaDetector"),
-        str(EXTERNAL_ROOT / "ai4eutils"),
         str(EXTERNAL_ROOT / "yolov5"),
     ]
 )
@@ -97,7 +97,7 @@ def parse_args() -> argparse.Namespace:
         "--megadetector-script",
         type=Path,
         default=DEFAULT_MEGADETECTOR_SCRIPT,
-        help="Path to external/MegaDetector/detection/process_video.py",
+        help="Path to mdv5_process_video-compatible script (default: %(default)s).",
     )
     parser.add_argument(
         "--python-executable",
@@ -214,7 +214,9 @@ def run_megadetector(
 
     env = os.environ.copy()
     script_str = str(args.megadetector_script)
-    if "MegaDetector" in script_str:
+    # Only adjust PYTHONPATH when using the local mdv5 wrapper or a script that
+    # depends on the YOLOv5 utilities.
+    if "mdv5_process_video" in script_str:
         existing_path = env.get("PYTHONPATH")
         env["PYTHONPATH"] = (
             PYTHONPATH_APPEND if not existing_path else f"{PYTHONPATH_APPEND}{os.pathsep}{existing_path}"
