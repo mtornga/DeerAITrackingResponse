@@ -1,0 +1,22 @@
+{
+  "coordinate_system": "inches",
+  "origin": "Top-left corner of the black board at (0,0); x increases toward the camera, y to the right.",
+  "units": "inches",
+  "board_corners_pixels": {},
+  "cutebot_nose_pixels": null,
+  "cutebot_nose_inches": {
+    "x": 14.7,
+    "y": 12.2
+  },
+  "cutebot_nose_inches_projected": {
+    "x": 14.7,
+    "y": 12.2
+  },
+  "arrow_tail_pixels": null,
+  "arrow_tip_pixels": null,
+  "arrow_heading_degrees": null,
+  "heading_model_degrees": 0.0,
+  "heading_degrees": 0.0,
+  "confidence": 0.74,
+  "notes": "Used the white bumper tip under the green arrow (AprilTag not clearly visible). Relative to the labeled corners/midpoints and the green plus at (15,12), the nose is roughly 0.3 in right of center and ~0.3 in toward the back from center. Perspective tilt and slight glare add uncertainty. For higher accuracy: keep the AprilTag fully visible and flat, avoid glare, and keep the nose clear of the green plus."
+}

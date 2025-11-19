@@ -1,0 +1,22 @@
+{
+  "coordinate_system": "inches",
+  "origin": "(0,0) at board's back-left/top-left corner; x grows toward camera, y to the right",
+  "units": "inches",
+  "board_corners_pixels": {},
+  "cutebot_nose_pixels": null,
+  "cutebot_nose_inches": {
+    "x": 3.2,
+    "y": 4.8
+  },
+  "cutebot_nose_inches_projected": {
+    "x": 3.2,
+    "y": 4.8
+  },
+  "arrow_tail_pixels": null,
+  "arrow_tip_pixels": null,
+  "arrow_heading_degrees": null,
+  "heading_model_degrees": 0.0,
+  "heading_degrees": 0.0,
+  "confidence": 0.68,
+  "notes": "Used the visible AprilTag (ID 0) center on the front deck as the nose. Board corner and midpoint labels plus the green center cross were used to set the projective frame; the robot sits near the back-left area a few inches from both top and left edges. Perspective and slight glare from LEDs introduce small uncertainty. Improving by placing small corner fiducials on the board, ensuring the tag stays flat and unobscured, and reducing LED glare would tighten accuracy."
+}

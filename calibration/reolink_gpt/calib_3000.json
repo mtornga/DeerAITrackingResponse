@@ -1,0 +1,22 @@
+{
+  "coordinate_system": "inches",
+  "origin": "Board\u2019s back-left corner (top-left of image) is (0,0).",
+  "units": "inches",
+  "board_corners_pixels": {},
+  "cutebot_nose_pixels": null,
+  "cutebot_nose_inches": {
+    "x": 29.2,
+    "y": 1.9
+  },
+  "cutebot_nose_inches_projected": {
+    "x": 29.2,
+    "y": 1.9
+  },
+  "arrow_tail_pixels": null,
+  "arrow_tip_pixels": null,
+  "arrow_heading_degrees": null,
+  "heading_model_degrees": 0.0,
+  "heading_degrees": 0.0,
+  "confidence": 0.7,
+  "notes": "Used the printed corner and midpoint labels plus the green center cross to anchor the board geometry. The CuteBot is near the (30,0) corner; the small AprilTag on the front deck is visible and its center was taken as the nose. Perspective and slight glare near the bottom-left edge introduce error; a larger, flatter-mounted tag or dual tags on the nose, plus a fixed homography calibration per session, would improve accuracy."
+}

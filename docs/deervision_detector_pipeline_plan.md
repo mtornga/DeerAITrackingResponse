@@ -313,19 +313,72 @@ export:
 
 - Confidence calibration: Platt scaling/temperature to stabilize thresholds across packs.
 
-12) Definition of “Done” (Detector)
+13) Morning A/B Review (Automation)
 
-- On frozen eval sets:
+- Nightly job: `python scripts/run_ab_review.py --date $(date -u +%F)`
+  - Samples frames from each kept event in `/srv/deer-share/runs/live/events/<date>`.
+  - Renders variants (e.g., conf=0.30/iou=0.45 @960, conf=0.35/iou=0.40 @960, and 1280px) with
+    `scripts/visualize_errors2.py --policy outdoor/deer-vision/configs/qc_policies.yaml`.
+  - Publishes to `/srv/deer-share/runs/review/<date>/<segment>/<variant>/` and writes `/srv/deer-share/runs/review/<date>/index.json`.
+- Review UI: `streamlit run outdoor/deer-vision/ui/review.py`
+  - Side-by-side variants with thumbs up/down; votes stored in `/srv/deer-share/runs/review/review_votes.json`.
+  - Use votes to promote thresholds to live and to queue frames for relabeling.
 
-    - mAP@.5 ≥ 0.80, Recall@.5 ≥ 0.85.
+14) New “Highest-Impact” Review Workflow (Updated)
 
-    - FP/min ≤ 0.10 (day) and ≤ 0.25 (night).
+- Goal: collect the most valuable feedback first. The generator and UI now surface frames where your choice meaningfully changes thresholds.
 
-    - p95 latency ≤ 40 ms on your Mac mini at 960 px.
+- Generator details (`scripts/run_ab_review.py` on repo; server wrapper `/srv/deer-share/tools/run_ab.py`):
+  - Produces overlays for each `<segment>` and variant under `/srv/deer-share/runs/review/<date>/<segment>/<variant>/`.
+  - Writes per-variant `summary.json` and `frames.json` (per-frame stats: `pred`, `tp`, `fp`, `fn`).
+  - Builds `/srv/deer-share/runs/review/<date>/index.json` with:
+    - `frames_with_preds` (how many frames had any boxes)
+    - `top_pred_frames` (first 50 frame names with the most predictions)
+    - `disagree_frames` (frames where some variants predicted and others did not)
+  - If `<events>/<date>` is empty, it falls back to `<analysis>/<date>` so you still get a review set.
 
-- Reproducible: make train && make eval passes from a clean checkout.
+- UI updates (`outdoor/deer-vision/ui/review.py`):
+  - Cross‑platform root resolution (mac SMB or Ubuntu path). Use `REVIEW_ROOT` to override.
+  - Modes:
+    - Disagreements: shows frames where variants differ (most impactful for voting).
+    - Detections only: shows frames with any boxes (skips empty yard).
+    - All frames: chronological.
+  - Pagination and adjustable “frames per page” to browse quickly.
+  - If `index.json` is missing/empty, the UI synthesizes an index from the folder layout so you can review while the generator is still running.
 
-- Usable: make export produces an artifact that your realtime node consumes.
+- Launch patterns:
+  - Server‑hosted (recommended, no SMB needed):
+    - `REVIEW_ROOT=/srv/deer-share/runs/review streamlit run outdoor/deer-vision/ui/review.py --server.address 0.0.0.0 --server.port 8502`
+    - Open `http://<server-ip>:8502` from your Mac/phone.
+  - Mac client (SMB mounted at `~/DeerShare`):
+    - `REVIEW_ROOT=~/DeerShare/runs/review streamlit run outdoor/deer-vision/ui/review.py`
+
+- Nightly automation:
+  - At ~05:05 UTC, run `python scripts/run_ab_review.py --date $(date -u +%F)` (or use `/srv/deer-share/tools/run_ab.py` on the server).
+  - Then open the UI, set the Date, and start in “Disagreements” mode.
+
+- Threshold promotion (policy):
+  - Votes per segment choose the winning variant; those thresholds are promoted to the “daylight” or “night-hard” live profile for the next night.
+  - Votes are kept in `/srv/deer-share/runs/review/review_votes.json` and referenced by the ingest/detector launcher.
+
+
+12) Definition of “Perfect” (Updated)
+
+- Evaluation policy (configs/qc_policies.yaml):
+  - deer-only by default; apriltags/person excluded from GT and predictions for QC.
+  - Size-aware ignore for tiny/far deer at night (`min_gt_area_frac`, `min_gt_short_px`).
+  - Baseline thresholds: conf=0.30–0.35, NMS IoU=0.45, agnostic NMS, max_det=10, match_iou=0.45.
+- Daylight acceptance bar:
+  - FN ≤ 2 per 100 frames on well-lit, large deer; FP ≤ 1 per 100 frames.
+  - Prefer imgsz 960; allow 1280 if recall needs headroom.
+- Night-hard acceptance bar:
+  - FN tolerant for ultra-small/far deer if under ignore thresholds; FP ≤ 6 per 100 frames.
+  - Tiling allowed if needed; report bucketed metrics (near/mid/far).
+- System bars (unchanged): mAP@.5 ≥ 0.80 overall; p95 latency ≤ 40 ms on Mac mini at 960px.
+
+Reproducibility: make train && make eval passes from a clean checkout.
+
+Shipping: make export produces an artifact that the realtime node consumes.
 
 13) Next Steps After Detector (preview)
 

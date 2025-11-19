@@ -1,0 +1,22 @@
+{
+  "coordinate_system": "inches",
+  "origin": "Black board top-left corner (0,0); x toward camera, y to the board\u2019s right edge.",
+  "units": "inches",
+  "board_corners_pixels": {},
+  "cutebot_nose_pixels": null,
+  "cutebot_nose_inches": {
+    "x": 10.0,
+    "y": 4.5
+  },
+  "cutebot_nose_inches_projected": {
+    "x": 10.0,
+    "y": 4.5
+  },
+  "arrow_tail_pixels": null,
+  "arrow_tip_pixels": null,
+  "arrow_heading_degrees": null,
+  "heading_model_degrees": 0.0,
+  "heading_degrees": 0.0,
+  "confidence": 0.6,
+  "notes": "Nose taken as the center of the visible AprilTag on the CuteBot\u2019s front deck. Board corners, edge midpoints, and the green center plus were used to estimate a projective layout; the bot sits in the upper-left quadrant a few inches from the left edge and well above the board center. Off\u2011axis view and lack of an explicit homography introduce noticeable uncertainty. For tighter results, place small AprilTags at all four board corners (and midpoints) to compute homography each frame, or mount the camera more overhead."
+}

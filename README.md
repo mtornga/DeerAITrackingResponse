@@ -74,3 +74,22 @@ Ubuntu server with GTX 3080
   - `mkdir -p ~/DeerShare`
   - `mount_smbfs //mtornga@192.168.68.71/deer-share ~/DeerShare`
 - Expect a `hello-from-server.txt` smoke-test file at the root after provisioning. Use this share for exchanging tabletop captures and detector outputs that do not belong in the repo.
+
+## Monitoring dashboard
+
+Get a quick health read on the Mac, Ubuntu server, and background jobs by launching the tmux dashboard:
+
+1. Make sure SSH keys are loaded (once per login).
+   - `ssh-add --apple-use-keychain ~/.ssh/id_ed25519`
+2. Verify `.env` contains the Ubuntu host and repo path you actually use (defaults work for `192.168.68.71` and `~/projects/deer-vision`).
+3. From the repo root on the Mac, run:
+   - `scripts/deervision_dashboard_tmux.sh`
+
+This spawns/attaches a `deervision-dashboard` tmux session with four panes:
+
+- Mac status (top-left) – wraps `scripts/deervision_status_mac.sh`.
+- Ubuntu status (top-right) – SSH + `scripts/deervision_status_ubuntu.sh` (disk, GPU, services, long-running jobs, camera sockets).
+- Ubuntu CPU/GPU monitor (bottom-left) – `htop` when available, otherwise `top`.
+- Ubuntu logs (bottom-right) – `scripts/deervision_tail_logs.sh` tails `logs/*.log` on the server, emitting a reminder if no log files exist yet.
+
+The scripts automatically source `.env` so you can extend health checks via new env vars (e.g., `DEERVISION_CVAT_URL`, `DEERVISION_STREAMLIT_URL`, or more `*_RTSP` endpoints). Keep the Ubuntu repo in sync so `scripts/deervision_status_ubuntu.sh` and `scripts/deervision_tail_logs.sh` are available at `${DEERVISION_UBUNTU_REPO_PATH}/scripts/`.

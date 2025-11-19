@@ -1,0 +1,14 @@
+{
+  "dataset": "outdoor/deer-vision/data/datasets/deer_det_v01",
+  "splits": {
+    "train": 211,
+    "val": 45,
+    "test": 45
+  },
+  "class_names": {
+    "0": "deer",
+    "1": "unknown_animal",
+    "2": "person",
+    "3": "apriltag"
+  }
+}

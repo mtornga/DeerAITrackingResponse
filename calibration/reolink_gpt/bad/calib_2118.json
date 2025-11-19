@@ -1,0 +1,22 @@
+{
+  "coordinate_system": "inches",
+  "origin": "Top-left of the black board (0,0); x increases toward the camera, y to the board\u2019s right.",
+  "units": "inches",
+  "board_corners_pixels": {},
+  "cutebot_nose_pixels": null,
+  "cutebot_nose_inches": {
+    "x": 26.9,
+    "y": 21.6
+  },
+  "cutebot_nose_inches_projected": {
+    "x": 26.9,
+    "y": 21.6
+  },
+  "arrow_tail_pixels": null,
+  "arrow_tip_pixels": null,
+  "arrow_heading_degrees": null,
+  "heading_model_degrees": 0.0,
+  "heading_degrees": 0.0,
+  "confidence": 0.68,
+  "notes": "Board corners and edge midpoints were taken from the inner black-rectangle edges using the eight printed coordinate tags and the green center plus for sanity checks. The AprilTag on the robot is not clearly visible, so the estimate uses the bumper center beneath the green arrow tip. Perspective and slight occlusion introduce error; visibility of the AprilTag and a homography from the labeled board corners would improve accuracy."
+}
