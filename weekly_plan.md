@@ -54,8 +54,13 @@ This plan focuses on bridging the gap between the Mac (Control) and Ubuntu (Comp
 
 4.  **External Tools Organization:** Move the useful parts of the remote `tmp` (YOLOv5, MegaDetector) into a structured `external/` directory on the remote machine and document how to reference them.
     - Plan: Standardize on `external/` under `~/projects/DeerAITrackingResponse` for heavy third-party repos (YOLOv5, MegaDetector, ai4eutils, etc.).
-    - TODO (remote): Move existing tools from `~/projects/deer-vision/tmp/` into `~/projects/DeerAITrackingResponse/external/` (preserving their internal git histories).
+    - Observation (code): Several scripts still assume a legacy `tmp/` layout:
+        * `scripts/live_megadetector.py` / `scripts/run_md_on_segment.py` append `tmp/MegaDetector`, `tmp/ai4eutils`, `tmp/yolov5` to `PYTHONPATH`.
+        * `scripts/mdv5_process_video.py` points `YOLOV5_ROOT` at `REPO_ROOT / "tmp" / "yolov5"`.
+    - Observation (remote): On Ubuntu, there is currently **no** `tmp/` or `external/` directory under `~/projects/DeerAITrackingResponse` after the fresh clone; external repos will need to be re-fetched.
+    - TODO (repo): Update helpers to target `external/` instead of `tmp/` (e.g., `external/yolov5`, `external/MegaDetector`, `external/ai4eutils`), keeping paths centralized via small config constants.
     - TODO (repo): Ensure `.gitignore` keeps `external/` out of version control while allowing lightweight wrappers or configs.
+    - TODO (remote): When ready, clone YOLOv5, MegaDetector, and ai4eutils into `~/projects/DeerAITrackingResponse/external/` and verify the updated scripts import correctly.
     - Note: Long-term, agents should call tools via thin wrappers in `scripts/` so paths like `external/yolov5` are never hard-coded in many places.
 
 5.  **Samba Share Verification:** Verify the Samba share mount on both machines. Create a test script `scripts/verify_storage.sh` that writes/reads a file from both ends to confirm shared access.
@@ -85,3 +90,15 @@ This plan focuses on bridging the gap between the Mac (Control) and Ubuntu (Comp
 10. **Documentation Sync:** Update `README.md` to reflect the new unified structure, the role of the `external` directory, and the standard commands for remote execution.
     - TODO (repo): Fold the Medium-level plan and NewNotes vision into a concise "Architecture" and "Daily Workflow" section.
     - Note: Keep `README.md` focused on onboarding humans; cross-link deeper agent instructions to `AGENTS.md` and `AGENTS_REMOTE.md`.
+
+11. **Disk Hygiene / Env Consolidation:** Reduce root disk pressure by consolidating Python environments and relocating heavy scratch data.
+    - Observation: Root (`/`) is still ~93% used on Ubuntu; the largest user under `/home/mtornga` is project-related state:
+        * `~/projects/DeerAITrackingResponse/.venv` ≈ 5.2G (new canonical Python env).
+        * `~/.local/share/mamba/envs/deer` ≈ 6.5G (legacy mamba env).
+        * `~/projects/cvat-share` ≈ 1.9G (CVAT artifacts/scratch).
+    - Policy: Treat `.venv` in `~/projects/DeerAITrackingResponse` as the *only* supported Deer Vision runtime env going forward; the mamba `deer` env is considered legacy.
+    - TODO (manual/remote): Once comfortable that nothing else depends on `~/.local/share/mamba/envs/deer`, remove it to reclaim ~6.5G:
+        * `rm -rf ~/.local/share/mamba/envs/deer`
+      (This should drop root usage from ~93% toward the mid-80s.)
+    - Future TODO (ops): Mount `/srv/deer-share` on the dedicated USB drive (UUID `F04815E200F815F8`) so it becomes a true separate volume for clips, CVAT exports, and other heavy assets.
+    - Future TODO (repo): Document a layout where heavy scratch directories (e.g., `cvat-share`, `runs/`, `external/`) live on `/srv/deer-share` with symlinks from `~/projects`, allowing agents to move space-hungry artifacts off the root disk without breaking paths.
