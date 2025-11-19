@@ -1,0 +1,22 @@
+{
+  "coordinate_system": "inches",
+  "origin": "Board\u2019s top-left corner (0,0) on the black rectangle",
+  "units": "inches",
+  "board_corners_pixels": {},
+  "cutebot_nose_pixels": null,
+  "cutebot_nose_inches": {
+    "x": 17.0,
+    "y": 12.6
+  },
+  "cutebot_nose_inches_projected": {
+    "x": 17.0,
+    "y": 12.6
+  },
+  "arrow_tail_pixels": null,
+  "arrow_tip_pixels": null,
+  "arrow_heading_degrees": null,
+  "heading_model_degrees": 0.0,
+  "heading_degrees": 0.0,
+  "confidence": 0.78,
+  "notes": "Used the AprilTag (Tag36h11 ID 0) center on the CuteBot\u2019s front deck as the nose. Aligned to the board using the four corner labels, four edge midpoints, and the green center plus for sanity checks. Small residual perspective skew and slight tag tilt introduce ~\u00b11 in uncertainty. To improve accuracy: add small AprilTags at the board corners, keep the full board edges visible, and ensure the nose tag remains flat and well lit."
+}

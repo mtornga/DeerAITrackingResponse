@@ -1,0 +1,22 @@
+{
+  "coordinate_system": "inches",
+  "origin": "Top-left corner of the black board surface is (0,0); x grows toward the camera (down the image), y grows to the board\u2019s right edge.",
+  "units": "inches",
+  "board_corners_pixels": {},
+  "cutebot_nose_pixels": null,
+  "cutebot_nose_inches": {
+    "x": 29.1,
+    "y": 23.2
+  },
+  "cutebot_nose_inches_projected": {
+    "x": 29.1,
+    "y": 23.2
+  },
+  "arrow_tail_pixels": null,
+  "arrow_tip_pixels": null,
+  "arrow_heading_degrees": null,
+  "heading_model_degrees": 0.0,
+  "heading_degrees": 0.0,
+  "confidence": 0.64,
+  "notes": "Used the printed corner and midpoint labels plus the center green plus to anchor the 24x30 in board and then estimated the AprilTag center on the CuteBot near the bottom-right. The tag is visible and close to both the bottom and right edges, roughly ~0.8\u20131.0 in from each. Perspective and slight glare on the white bumper introduce uncertainty. Accuracy would improve with a larger or higher-contrast tag centered on the nose, keeping the bot a bit farther from the edges, and capturing from a slightly higher, more overhead angle or using a calibrated homography from the labeled corners."
+}

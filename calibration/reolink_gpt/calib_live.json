@@ -1,0 +1,53 @@
+{
+  "coordinate_system": "image_pixels",
+  "origin": "top-left of raw Reolink frame",
+  "units": "pixels",
+  "board_corners_pixels": {
+    "top_left": {
+      "x": 712.0,
+      "y": 124.0
+    },
+    "top_right": {
+      "x": 1930.0,
+      "y": 85.0
+    },
+    "bottom_left": {
+      "x": 330.0,
+      "y": 1550.0
+    },
+    "bottom_right": {
+      "x": 2254.0,
+      "y": 1590.0
+    }
+  },
+  "cutebot_nose_pixels": {
+    "x": 1250.0,
+    "y": 230.0
+  },
+  "cutebot_nose_inches": {
+    "x": 2.6,
+    "y": 11.1
+  },
+  "cutebot_nose_inches_projected": {
+    "x": 3.816688790992319,
+    "y": 10.992461390159335
+  },
+  "arrow_tail_pixels": {
+    "x": 1550.0,
+    "y": 190.0
+  },
+  "arrow_tip_pixels": {
+    "x": 1250.0,
+    "y": 230.0
+  },
+  "arrow_heading_degrees": 172.40535663140858,
+  "heading_model_degrees": 262.4,
+  "heading_degrees": 172.40535663140858,
+  "confidence": 0.6,
+  "notes": "Corner pixels use the provided approximate board corners. Nose and arrow points were picked from the visible green arrow and white bumper (nose is forward-most white bumper point between headlights). Inch conversion used a linear approx from the average top/bottom and left/right corner pairs; small perspective error possible. Heading computed as clockwise from the back/top board edge to the arrow vector. | corner_ratio_delta\u22480.29; arrow_heading\u2248172.4\u00b0; arrow_vs_model\u224890.0\u00b0",
+  "calibrated_inches": {
+    "forward": 11.046696774481092,
+    "lateral": 2.478466463547619,
+    "source": "affine_transform"
+  }
+}

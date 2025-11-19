@@ -1,0 +1,22 @@
+{
+  "coordinate_system": "inches",
+  "origin": "(0,0) at the black board\u2019s top-left corner; x increases toward the camera, y to the board\u2019s right edge.",
+  "units": "inches",
+  "board_corners_pixels": {},
+  "cutebot_nose_pixels": null,
+  "cutebot_nose_inches": {
+    "x": 4.4,
+    "y": 12.7
+  },
+  "cutebot_nose_inches_projected": {
+    "x": 4.4,
+    "y": 12.7
+  },
+  "arrow_tail_pixels": null,
+  "arrow_tip_pixels": null,
+  "arrow_heading_degrees": null,
+  "heading_model_degrees": 0.0,
+  "heading_degrees": 0.0,
+  "confidence": 0.7,
+  "notes": "Used the four board corners, the four edge midpoints, and the green center plus to set the homography and read off the AprilTag center (tag visible on the front deck). The bot is near the top edge, slightly right of the centerline. Perspective and slight tag foreshortening introduce error; moving the robot farther from the edges and using a larger AprilTag or multiple tags on the nose line would improve accuracy."
+}

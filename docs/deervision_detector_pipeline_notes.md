@@ -76,3 +76,23 @@ Rolling log of issues, workarounds, and reminders encountered while executing th
 - **GPU pipeline reminder**: After updating eval packs locally, always `rsync` the entire `outdoor/deer-vision/` tree to `~/projects/deer-vision` on the Ubuntu box, then run training/eval with `python scripts/train.py --device 0 --name <run>` and `python scripts/evaluate.py --device 0 --model models/<run>/weights/best.pt --conf 0.4`. Keep training/eval in tmux (`tmux new -s train '...') so long-running CUDA jobs survive SSH drops.
 
 Keep this file updated with future quirks (e.g., DVC remote hiccups, Ultralytics version pinning notes, etc.).
+
+## 2025-11-13 — Daylight buck, QC policy, and A/B review
+
+- Daylight buck (segment_144221) exposed a recall gap on grazing/side/back-facing deer. Actions taken:
+  - Added `outdoor/deer-vision/configs/qc_policies.yaml` and wired it into the error visualizer. Default eval now:
+    - deer-only (exclude apriltags/persons from GT and predictions)
+    - conf=0.30–0.35, NMS IoU=0.45, agnostic NMS, max_det=10
+    - Ignore tiny GT by size: `min_gt_area_frac`, `min_gt_short_px`
+  - New robust visualizer: `scripts/visualize_errors2.py` (writes overlays reliably and honors policies).
+  - Daybuck deer-only result with v04: frames=302, TP=125, FP=1, FN=93 at conf=0.30 / iou=0.45.
+- A/B review automation:
+  - Script `scripts/run_ab_review.py` samples frames from each kept event (last 24h) and renders overlays for multiple variants
+    (e.g., conf=0.30/iou=0.45 @960px, conf=0.35/iou=0.40 @960px, and a 1280px variant).
+  - Publishes to `/srv/deer-share/runs/review/<YYYY-MM-DD>/<segment>/<variant>/` with an `index.json` for the UI.
+  - Streamlit review app: `outdoor/deer-vision/ui/review.py` shows A/B side-by-side and records thumbs-up/down to
+    `/srv/deer-share/runs/review/review_votes.json`.
+- Definition-of-perfect adjustments:
+  - Daytime: target FN ≤ 2/100 frames on well-lit, large deer; FP ≤ 1/100 frames.
+  - Night-hard: small/far deer may be ignored per `qc_policies.yaml`; FP tolerance slightly higher.
+  - These thresholds are documented in the pipeline plan and enforced in QC scripts by default.

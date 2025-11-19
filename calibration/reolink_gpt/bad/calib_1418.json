@@ -1,0 +1,22 @@
+{
+  "coordinate_system": "inches",
+  "origin": "Board top-left corner (0,0); x increases toward camera, y to the right edge.",
+  "units": "inches",
+  "board_corners_pixels": {},
+  "cutebot_nose_pixels": null,
+  "cutebot_nose_inches": {
+    "x": 13.6,
+    "y": 22.8
+  },
+  "cutebot_nose_inches_projected": {
+    "x": 13.6,
+    "y": 22.8
+  },
+  "arrow_tail_pixels": null,
+  "arrow_tip_pixels": null,
+  "arrow_heading_degrees": null,
+  "heading_model_degrees": 0.0,
+  "heading_degrees": 0.0,
+  "confidence": 0.7,
+  "notes": "Used the labeled corners, edge midpoints, and center plus to align to the 30x24 in board. The AprilTag on the front deck is visible and taken as the nose. The tag sits close to the right edge, slightly above the 15,24 midpoint line. Perspective skew and proximity to the edge limit precision; placing the bot >2 in from edges or adding a small fiducial at the bumper tip would improve accuracy."
+}

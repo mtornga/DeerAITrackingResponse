@@ -1,0 +1,19 @@
+{
+  "packs": [
+    {
+      "name": "daytime_easy",
+      "description": "High-contrast, close-range daylight footage. No assets frozen yet.",
+      "status": "pending"
+    },
+    {
+      "name": "night_hard",
+      "description": "IR night clips with partial occlusion. Sources: outdoor/eval_clips/{nighthard1.mp4, segment_055549.mp4, segment_055612.mp4, segment_092645.mp4}.",
+      "status": "labeled"
+    },
+    {
+      "name": "mixed_weather",
+      "description": "Low-visibility rain/fog coverage. Sources: outdoor/eval_clips/segment_092708.mp4, segment_092754.mp4.",
+      "status": "labeled"
+    }
+  ]
+}

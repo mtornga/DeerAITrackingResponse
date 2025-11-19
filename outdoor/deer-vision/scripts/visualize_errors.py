@@ -57,10 +57,14 @@ def annotate_image(
     nms_iou: float,
     agnostic_nms: bool,
     max_det: int,
+    eval_classes: list[int] | None,
+    pred_classes: list[int] | None,
 ) -> dict:
     relative = image_path.relative_to(images_root)
     label_path = labels_root / relative.with_suffix(".txt")
     gt_boxes = load_yolo_file(label_path)
+    if eval_classes:
+        gt_boxes = [b for b in gt_boxes if b.cls in set(eval_classes)]
     results = model.predict(
         source=str(image_path),
         conf=conf,
@@ -79,7 +83,12 @@ def annotate_image(
     h, w = result.orig_shape
     matched_gt = [False] * len(gt_boxes)
     if result.boxes:
-        for cls, xywhn, score in zip(result.boxes.cls.tolist(), result.boxes.xywhn.tolist(), result.boxes.conf.tolist()):
+        box_cls = result.boxes.cls.tolist() if result.boxes.cls is not None else []
+        box_xywhn = result.boxes.xywhn.tolist() if result.boxes.xywhn is not None else []
+        box_conf = result.boxes.conf.tolist() if result.boxes.conf is not None else []
+        for cls, xywhn, score in zip(box_cls, box_xywhn, box_conf):
+            if pred_classes and int(cls) not in set(pred_classes):
+                continue
             box = (
                 (xywhn[0] - xywhn[2] / 2) * w,
                 (xywhn[1] - xywhn[3] / 2) * h,
@@ -126,6 +135,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--nms-iou", type=float, default=0.5, help="NMS IoU threshold passed to YOLO.")
     parser.add_argument("--agnostic-nms", action="store_true", help="Enable class-agnostic NMS.")
     parser.add_argument("--max-det", type=int, default=300, help="Maximum detections per frame.")
+    parser.add_argument(
+        "--eval-classes",
+        type=int,
+        nargs="*",
+        default=None,
+        help="Only evaluate these GT classes (by id). If omitted, all GT are used.",
+    )
+    parser.add_argument(
+        "--pred-classes",
+        type=int,
+        nargs="*",
+        default=None,
+        help="Only count predictions for these classes (by id).",
+    )
     return parser.parse_args()
 
 
@@ -152,6 +175,8 @@ def main() -> None:
                 args.nms_iou,
                 args.agnostic_nms,
                 args.max_det,
+                args.eval_classes,
+                args.pred_classes,
             )
         )
     summary = {

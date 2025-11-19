@@ -1,0 +1,22 @@
+{
+  "coordinate_system": "inches",
+  "origin": "Black board (0,0) at top-left; x increases toward camera, y to board right edge.",
+  "units": "inches",
+  "board_corners_pixels": {},
+  "cutebot_nose_pixels": null,
+  "cutebot_nose_inches": {
+    "x": 4.3,
+    "y": 21.8
+  },
+  "cutebot_nose_inches_projected": {
+    "x": 4.3,
+    "y": 21.8
+  },
+  "arrow_tail_pixels": null,
+  "arrow_tip_pixels": null,
+  "arrow_heading_degrees": null,
+  "heading_model_degrees": 0.0,
+  "heading_degrees": 0.0,
+  "confidence": 0.58,
+  "notes": "Robot identified by white bumper/blue chassis with AprilTag on the front deck; tag center used as the nose. Estimated using the labeled board corners, midpoints, and the green center cross for a perspective fit. Bot is inset a few inches from the top and ~2\u20133 inches from the right edge. Main uncertainty comes from perspective foreshortening, slight tag tilt, and edge curvature of the board in the image. For higher accuracy, ensure all four board corners are fully visible and flat, keep the AprilTag fully facing the camera and centered on the front deck, or add a second tag flush at the bumper center."
+}

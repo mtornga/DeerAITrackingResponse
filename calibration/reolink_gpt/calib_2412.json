@@ -1,0 +1,22 @@
+{
+  "coordinate_system": "inches",
+  "origin": "Black board coordinates: (0,0) at back-left corner of the black rectangle; x increases toward camera, y increases to the right.",
+  "units": "inches",
+  "board_corners_pixels": {},
+  "cutebot_nose_pixels": null,
+  "cutebot_nose_inches": {
+    "x": 26.0,
+    "y": 10.0
+  },
+  "cutebot_nose_inches_projected": {
+    "x": 26.0,
+    "y": 10.0
+  },
+  "arrow_tail_pixels": null,
+  "arrow_tip_pixels": null,
+  "arrow_heading_degrees": null,
+  "heading_model_degrees": 0.0,
+  "heading_degrees": 0.0,
+  "confidence": 0.7,
+  "notes": "Used the tagged board corners/midpoints and the center green plus to infer a homography and then located the CuteBot by the AprilTag centered on the front deck (aligned with the green arrow tip). The tag is small and partially foreshortened; slight perspective and shadowing near the bottom edge introduce error. A larger AprilTag, consistent lighting, and an overhead calibration shot (showing all four board corners clearly) would improve accuracy."
+}

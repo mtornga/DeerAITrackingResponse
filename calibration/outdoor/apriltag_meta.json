@@ -1,0 +1,32 @@
+{
+  "tags": [
+    2,
+    3,
+    4,
+    5
+  ],
+  "pixel_file": "calibration/outdoor/apriltag_pixels.json",
+  "calibration_pdf": "outdoor/calibration/apriltags_outdoor_calibration.pdf",
+  "measurements": {
+    "0": {
+      "range_ft": 50.0,
+      "pitch_deg": 5.0,
+      "height_ft": 2.6
+    },
+    "1": {
+      "range_ft": 11.0,
+      "pitch_deg": 30.0,
+      "height_ft": 4.0
+    },
+    "2": {
+      "range_ft": 11.0,
+      "pitch_deg": 20.0,
+      "height_ft": 3.0
+    },
+    "3": {
+      "range_ft": 48.0,
+      "pitch_deg": 30.0,
+      "height_ft": 5.0
+    }
+  }
+}
