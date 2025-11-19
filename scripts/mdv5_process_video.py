@@ -15,7 +15,15 @@ import numpy as np
 import torch
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-YOLOV5_ROOT = REPO_ROOT / "tmp" / "yolov5"
+EXTERNAL_ROOT = REPO_ROOT / "external"
+YOLOV5_ROOT = EXTERNAL_ROOT / "yolov5"
+
+# Backwards-compatible fallback to legacy tmp/ layout if external/ is not populated yet.
+if not YOLOV5_ROOT.exists():
+    legacy_root = REPO_ROOT / "tmp" / "yolov5"
+    if legacy_root.exists():
+        YOLOV5_ROOT = legacy_root
+
 if YOLOV5_ROOT.exists():
     sys.path.insert(0, str(YOLOV5_ROOT))
 
