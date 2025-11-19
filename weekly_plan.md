@@ -67,9 +67,11 @@ This plan focuses on bridging the gap between the Mac (Control) and Ubuntu (Comp
 
 5.  **Samba Share Verification:** Verify the Samba share mount on both machines. Create a test script `scripts/verify_storage.sh` that writes/reads a file from both ends to confirm shared access.
     - Plan: Treat `/srv/deer-share` (or equivalent) as the single source of truth for heavy clips and evaluation artifacts.
-    - TODO (repo): Add `scripts/verify_storage.sh` that writes a timestamped test file to the share and reads it back, exiting non-zero on failure.
-    - TODO (Mac/remote): Run the script from both Mac and Ubuntu to validate read/write symmetry and record the mount paths in `README.md` or a `.env` key.
-    - Note: This step is critical for the daily-review flow in `NewNotes.txt`, since agents need reliable shared storage for new clips and annotations.
+    - Status (repo): `scripts/verify_storage.sh` now exists; it loads `.env` when present, chooses a candidate share directory (preferring `DEER_SHARE_SERVER_PATH`, `DEER_SHARE_LOCAL_MOUNT`, `/srv/deer-share`, then `~/DeerShare`), writes a hostname+timestamp test file, and verifies the contents.
+    - Status (Mac): Running `scripts/verify_storage.sh` from the Mac succeeded against `~/DeerShare`, confirming read/write access to the mounted share from the controller node.
+    - Status (Ubuntu): Running the same script under `~/projects/DeerAITrackingResponse` detects `/srv/deer-share` but fails to write the test file with `Permission denied`, indicating that the server-side mount/directory is not yet writable as user `mtornga`.
+    - TODO (ops): Adjust the `/srv/deer-share` mount or directory ownership on Ubuntu (e.g., via `/etc/fstab` and `chown`/`setfacl`) so `mtornga` can write; re-run `scripts/verify_storage.sh` to confirm symmetric read/write access.
+    - Note: This step is critical for the daily-review flow in `NewNotes.txt`, since agents need reliable shared storage for new clips and annotations. Once permissions are fixed, this script becomes the standard smoke test before exercising the pipeline.
 
 6.  **Remote Execution Prototype:** Create a script `scripts/run_remote_inference.sh` on the Mac that successfully triggers a simple python script on the Ubuntu machine (e.g., "Hello GPU") via SSH.
     - Plan: Use passwordless SSH (key-based auth) from Mac to Ubuntu so agents can safely trigger remote jobs.
