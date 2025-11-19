@@ -54,13 +54,15 @@ This plan focuses on bridging the gap between the Mac (Control) and Ubuntu (Comp
 
 4.  **External Tools Organization:** Move the useful parts of the remote `tmp` (YOLOv5, MegaDetector) into a structured `external/` directory on the remote machine and document how to reference them.
     - Plan: Standardize on `external/` under `~/projects/DeerAITrackingResponse` for heavy third-party repos (YOLOv5, MegaDetector, ai4eutils, etc.).
-    - Observation (code): Several scripts still assume a legacy `tmp/` layout:
-        * `scripts/live_megadetector.py` / `scripts/run_md_on_segment.py` append `tmp/MegaDetector`, `tmp/ai4eutils`, `tmp/yolov5` to `PYTHONPATH`.
-        * `scripts/mdv5_process_video.py` points `YOLOV5_ROOT` at `REPO_ROOT / "tmp" / "yolov5"`.
-    - Observation (remote): On Ubuntu, there is currently **no** `tmp/` or `external/` directory under `~/projects/DeerAITrackingResponse` after the fresh clone; external repos will need to be re-fetched.
-    - TODO (repo): Update helpers to target `external/` instead of `tmp/` (e.g., `external/yolov5`, `external/MegaDetector`, `external/ai4eutils`), keeping paths centralized via small config constants.
-    - TODO (repo): Ensure `.gitignore` keeps `external/` out of version control while allowing lightweight wrappers or configs.
-    - TODO (remote): When ready, clone YOLOv5, MegaDetector, and ai4eutils into `~/projects/DeerAITrackingResponse/external/` and verify the updated scripts import correctly.
+    - Observation (code): MegaDetector helpers have been updated to prefer `external/`:
+        * `scripts/live_megadetector.py` / `scripts/run_md_on_segment.py` now target `external/MegaDetector`, `external/ai4eutils`, `external/yolov5`.
+        * `scripts/mdv5_process_video.py` uses `external/yolov5`, with a backwards-compatible fallback to `tmp/yolov5` if needed.
+    - Observation (remote): On Ubuntu, `~/projects/DeerAITrackingResponse/external/` now contains fresh clones of:
+        * `external/MegaDetector` (microsoft/CameraTraps)
+        * `external/ai4eutils` (microsoft/ai4eutils)
+        * `external/yolov5` (ultralytics/yolov5)
+    - Status (repo): `.gitignore` already ignores `external/`; docs in `docs/deer_tracking_pipeline.md` now reference `external/*` instead of `tmp/*` in the example commands.
+    - TODO (remote): Run a smoke test of `scripts/run_md_on_segment.py` and/or `scripts/live_megadetector.py` once new clips are available, confirming imports succeed with the external clones.
     - Note: Long-term, agents should call tools via thin wrappers in `scripts/` so paths like `external/yolov5` are never hard-coded in many places.
 
 5.  **Samba Share Verification:** Verify the Samba share mount on both machines. Create a test script `scripts/verify_storage.sh` that writes/reads a file from both ends to confirm shared access.
