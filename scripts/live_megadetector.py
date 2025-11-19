@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence
 
+
 def _ensure_repo_root_on_path() -> Path:
     script_path = Path(__file__).resolve()
     for parent in (script_path.parent, *script_path.parents):
@@ -29,7 +30,7 @@ def _ensure_repo_root_on_path() -> Path:
     return root
 
 
-_ensure_repo_root_on_path()
+REPO_ROOT = _ensure_repo_root_on_path()
 
 from env_loader import load_env_file
 
@@ -47,14 +48,22 @@ def default_live_path(relative: str) -> Path:
     return Path(relative)
 
 
+EXTERNAL_ROOT = REPO_ROOT / "external"
+
 DEFAULT_SEGMENTS_DIR = default_live_path("runs/live/analysis")
 DEFAULT_DETECTIONS_DIR = default_live_path("runs/live/detections")
 DEFAULT_EVENTS_DIR = default_live_path("runs/live/events")
 DEFAULT_MODEL_PATH = Path("models/md_v5a.0.0.pt")
-DEFAULT_MEGADETECTOR_SCRIPT = Path("tmp/MegaDetector/detection/process_video.py")
+DEFAULT_MEGADETECTOR_SCRIPT = EXTERNAL_ROOT / "MegaDetector" / "detection" / "process_video.py"
 DEFAULT_LOG_PATH = Path("logs/live_megadetector.log")
 DEFAULT_EVENTS_LOG = default_live_path("runs/live/events.log")
-PYTHONPATH_APPEND = os.pathsep.join(["tmp/MegaDetector", "tmp/ai4eutils", "tmp/yolov5"])
+PYTHONPATH_APPEND = os.pathsep.join(
+    [
+        str(EXTERNAL_ROOT / "MegaDetector"),
+        str(EXTERNAL_ROOT / "ai4eutils"),
+        str(EXTERNAL_ROOT / "yolov5"),
+    ]
+)
 INTERESTING_CATEGORIES = {"1", "2"}  # 1=animal, 2=person
 
 
@@ -88,7 +97,7 @@ def parse_args() -> argparse.Namespace:
         "--megadetector-script",
         type=Path,
         default=DEFAULT_MEGADETECTOR_SCRIPT,
-        help="Path to tmp/MegaDetector/detection/process_video.py",
+        help="Path to external/MegaDetector/detection/process_video.py",
     )
     parser.add_argument(
         "--python-executable",
@@ -205,7 +214,7 @@ def run_megadetector(
 
     env = os.environ.copy()
     script_str = str(args.megadetector_script)
-    if "tmp/MegaDetector" in script_str:
+    if "MegaDetector" in script_str:
         existing_path = env.get("PYTHONPATH")
         env["PYTHONPATH"] = (
             PYTHONPATH_APPEND if not existing_path else f"{PYTHONPATH_APPEND}{os.pathsep}{existing_path}"

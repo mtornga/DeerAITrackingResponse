@@ -25,14 +25,21 @@ def _ensure_repo_root_on_path() -> Path:
 
 
 REPO_ROOT = _ensure_repo_root_on_path()
+EXTERNAL_ROOT = REPO_ROOT / "external"
 
 from env_loader import load_env_file  # noqa: E402
 
 DEFAULT_SEGMENTS_ROOT = Path("runs/live/analysis")
 DEFAULT_DETECTIONS_ROOT = Path("runs/live/detections")
 DEFAULT_MODEL_PATH = Path("models/md_v5a.0.0.pt")
-DEFAULT_MEGADETECTOR_SCRIPT = Path("tmp/MegaDetector/detection/process_video.py")
-PYTHONPATH_APPEND = os.pathsep.join(["tmp/MegaDetector", "tmp/ai4eutils", "tmp/yolov5"])
+DEFAULT_MEGADETECTOR_SCRIPT = EXTERNAL_ROOT / "MegaDetector" / "detection" / "process_video.py"
+PYTHONPATH_APPEND = os.pathsep.join(
+    [
+        str(EXTERNAL_ROOT / "MegaDetector"),
+        str(EXTERNAL_ROOT / "ai4eutils"),
+        str(EXTERNAL_ROOT / "yolov5"),
+    ]
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -60,7 +67,7 @@ def parse_args() -> argparse.Namespace:
         "--megadetector-script",
         type=Path,
         default=DEFAULT_MEGADETECTOR_SCRIPT,
-        help="Path to tmp/MegaDetector/detection/process_video.py (default: %(default)s).",
+        help="Path to external/MegaDetector/detection/process_video.py (default: %(default)s).",
     )
     parser.add_argument(
         "--python-executable",
