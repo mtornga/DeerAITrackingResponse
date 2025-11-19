@@ -23,12 +23,12 @@ This document explains how to reproduce the two-deer tracking demo we just built
 
 ## 2. Stage: Detection (MegaDetector v5)
 
-We use the upstream `process_video.py` script out of the MegaDetector repo (cloned under `tmp/MegaDetector/`) with the MD v5a weights (`models/md_v5a.0.0.pt`).
+We use the upstream `process_video.py` script out of the MegaDetector repo (cloned under `external/MegaDetector/`) with the MD v5a weights (`models/md_v5a.0.0.pt`).
 
 ```bash
 source .venv/bin/activate
-PYTHONPATH=tmp/MegaDetector:tmp/ai4eutils:tmp/yolov5 \
-python tmp/MegaDetector/detection/process_video.py \
+PYTHONPATH=external/MegaDetector:external/ai4eutils:external/yolov5 \
+python external/MegaDetector/detection/process_video.py \
   models/md_v5a.0.0.pt outdoor/Backyard-00-064458-064505.mp4 \
   --output_json_file runs/megadetector/Backyard-00-064458-064505.json \
   --render_output_video \
@@ -54,8 +54,8 @@ If you need crops for classification or other downstream experiments:
 
 ```bash
 source .venv/bin/activate
-PYTHONPATH=tmp/MegaDetector:tmp/ai4eutils \
-python tmp/MegaDetector/classification/crop_detections.py \
+PYTHONPATH=external/MegaDetector:external/ai4eutils \
+python external/MegaDetector/classification/crop_detections.py \
   runs/megadetector/Backyard-00-064458-064505.json \
   tmp/Nest2025-11-05_21-23-30_crops \
   --images-dir tmp/megadetector_frames_Backyard-00-064458-064505 \
@@ -171,8 +171,8 @@ This writes `CTDv3_predictions_raw_final.csv` (boxes + labels per detection) and
 | Path | Description |
 |------|-------------|
 | `models/md_v5a.0.0.pt` | MegaDetector weights. |
-| `tmp/MegaDetector/` | CameraTraps repo clone (detection scripts). |
-| `tmp/ai4eutils`, `tmp/yolov5` | Helper repos required by MegaDetector scripts. |
+| `external/MegaDetector/` | CameraTraps repo clone (detection scripts). |
+| `external/ai4eutils`, `external/yolov5` | Helper repos required by MegaDetector scripts. |
 | `tmp/megadetector_frames_<video>/` | Frame extractions (reused by later stages). |
 | `runs/megadetector/*.json` | MegaDetector detections. |
 | `runs/megadetector/*_annotated.mp4` | Detection overlay videos. |
