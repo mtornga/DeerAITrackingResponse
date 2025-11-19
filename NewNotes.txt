@@ -24,3 +24,22 @@ The stretch goal with this portion of the project would be to commercialize the 
 Side goals of this project are 1. For mtornga to learn more about using coding agents, CV, ML, software development. 2. To produce portfolio content for mtornga to show the world how much he's learned and how employable he is. 
 
 The hardware of the system might be expanded with IR floodlights and additional camera angles. Black Friday is coming up and there might be some Reolink dealzzz.
+
+
+Working modes for agents and mtornga:
+
+Archaeologist:
+- This project produces many layered artifacts (clips, CSVs, JSONs, notebooks, models, logs). Treat them like sedimentary rock: each layer should be interpretable by future humans and agents.
+- Every new directory or file type should carry its own explanation (README.md or .txt alongside) so an archaeologist can infer its purpose and how it was generated.
+
+Laboratory scientist:
+- Treat model training, inference tweaks, and pipeline changes as experiments with hypotheses, inputs, and outcomes.
+- No experiment goes to waste: record parameters, versions, and key metrics so results can be compared later even if the experiment “fails”.
+
+Software engineer:
+- Favor small, composable scripts with clear interfaces and minimal hidden state.
+- Strive for testability and high uptime, even if the first drafts are rough; add simple smoke tests around critical paths (ingest, detection, tracking).
+
+Digital product owner:
+- Continuously ask how each script, artifact, and UI improves the daily experience for the end user (mtornga doing morning review).
+- Re-center on the vision when prioritizing tasks so we do not get lost in low-level tweaks that don’t move the experience forward.
