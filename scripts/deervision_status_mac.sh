@@ -14,6 +14,12 @@ if [[ -f "${REPO_ROOT}/.env" ]]; then
     set +a
 fi
 
+# Prefer the project-local virtualenv if it exists.
+if [[ -f "${REPO_ROOT}/.venv/bin/activate" ]]; then
+    # shellcheck disable=SC1090
+    source "${REPO_ROOT}/.venv/bin/activate"
+fi
+
 print_header() {
     printf "\n=== %s ===\n" "$1"
 }
@@ -134,4 +140,3 @@ main() {
 }
 
 main "$@"
-

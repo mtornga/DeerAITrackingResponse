@@ -41,8 +41,9 @@ This plan focuses on bridging the gap between the Mac (Control) and Ubuntu (Comp
 
 3.  **Environment Unification:** Create a setup script to install `requirements.txt` on the Ubuntu machine, ensuring the python environment matches the Mac's expectations.
     - Plan: Encapsulate the AGENTS instructions into a reusable script, e.g. `scripts/setup_env_remote.sh`.
-    - TODO (repo): Add a script that creates a `.venv`, activates it, and installs via `constraints.txt` / `requirements.txt` on Ubuntu.
-    - TODO (remote): Run the setup script once on Ubuntu and confirm Python version, CUDA visibility, and that `opencv-python` and `ultralytics` import cleanly.
+    - Status (repo): `scripts/setup_env_remote.sh` now exists; it creates `.venv` under the repo root, upgrades `pip`, installs the pinned core stack from `constraints.txt`, then installs the rest of `requirements.txt`.
+    - Status (remote): The setup script has been run on Ubuntu in `~/projects/DeerAITrackingResponse`, creating a `.venv` (~5.2G) with `torch==2.2.2+cu121`, `opencv-python==4.8.1`, and GPU support (`torch.cuda.is_available() == True`).
+    - TODO (remote): Ensure any shell helpers (`deervision_dashboard_tmux.sh`, cron jobs, etc.) activate `.venv` before running Python scripts (or explicitly document which env to use).
     - Note: Capture any Ubuntu-specific packages (e.g., system `ffmpeg`, `libgl1`) in comments within the setup script for future agents.
     - Observation: Ubuntu currently has ~7.4G under `/home/mtornga/.local/share/mamba` (mamba envs) plus small `.conda`/`.mamba` dirs; these survived our project cleanup and are a major disk consumer.
     - Design decision: Do **not** run Python virtualenvs directly from the Samba share; network filesystems are fragile for Python envs and can cause weird import/locking issues.
