@@ -21,7 +21,15 @@ fi
 SESSION_NAME="deervision-dashboard"
 UBUNTU_HOST="${DEERVISION_UBUNTU_HOST:-192.168.68.71}"
 UBUNTU_USER="${DEERVISION_UBUNTU_USER:-mtornga}"
-UBUNTU_REPO_PATH="${DEERVISION_UBUNTU_REPO_PATH:-~/projects/DeerAITrackingResponse}"
+
+# Normalize the remote repo path. If DEERVISION_UBUNTU_REPO_PATH was set with a
+# local-style path (e.g., /Users/marktornga/...), ignore it and fall back to the
+# canonical remote location under /home/<user>/projects.
+if [[ -n "${DEERVISION_UBUNTU_REPO_PATH:-}" && "${DEERVISION_UBUNTU_REPO_PATH}" != /Users/* ]]; then
+    UBUNTU_REPO_PATH="${DEERVISION_UBUNTU_REPO_PATH}"
+else
+    UBUNTU_REPO_PATH="/home/${UBUNTU_USER}/projects/DeerAITrackingResponse"
+fi
 
 # SSH options tuned for unattended use in tmux panes.
 SSH_OPTS="-o ConnectTimeout=5 -o StrictHostKeyChecking=no"
