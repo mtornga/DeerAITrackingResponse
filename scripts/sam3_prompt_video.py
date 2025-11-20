@@ -230,6 +230,8 @@ def run_cpu_image_prompt(
     max_frames: Optional[int],
 ) -> None:
     model = build_sam3_image_model(device="cpu", enable_inst_interactivity=False)
+    model = model.to(torch.device("cpu"))
+    model.eval()
     processor = Sam3Processor(model=model, device="cpu")
 
     cap = cv2.VideoCapture(str(video_path))
