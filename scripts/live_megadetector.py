@@ -53,7 +53,7 @@ EXTERNAL_ROOT = REPO_ROOT / "external"
 DEFAULT_SEGMENTS_DIR = default_live_path("runs/live/analysis")
 DEFAULT_DETECTIONS_DIR = default_live_path("runs/live/detections")
 DEFAULT_EVENTS_DIR = default_live_path("runs/live/events")
-DEFAULT_MODEL_PATH = Path("models/md_v5a.0.0.pt")
+DEFAULT_MODEL_PATH = Path("models/yolov8n.pt")
 # Use the local mdv5_process_video wrapper by default; it emits MegaDetector-style JSON
 # using Ultralytics weights, avoiding reliance on the upstream CameraTraps entrypoint.
 DEFAULT_MEGADETECTOR_SCRIPT = REPO_ROOT / "scripts" / "mdv5_process_video.py"
