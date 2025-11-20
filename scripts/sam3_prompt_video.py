@@ -29,6 +29,12 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
+import os
+
+CPU_MODE = "--cpu-only" in sys.argv
+if CPU_MODE:
+    os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
+
 import cv2
 from PIL import Image
 import numpy as np
