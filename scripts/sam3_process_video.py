@@ -41,13 +41,19 @@ except ImportError:  # pragma: no cover - torch is required by constraints.txt
     torch = None  # type: ignore[assignment]
 
 
-if torch is not None and not hasattr(torch, "compiler"):
-    class _TorchCompilerCompat:
-        @staticmethod
-        def is_compiling() -> bool:
+if torch is not None:
+    if not hasattr(torch, "compiler"):
+        class _TorchCompilerCompatModule:
+            @staticmethod
+            def is_compiling() -> bool:
+                return False
+
+        torch.compiler = _TorchCompilerCompatModule()  # type: ignore[attr-defined]
+    elif not hasattr(torch.compiler, "is_compiling"):  # type: ignore[attr-defined]
+        def _torch_compiler_is_compiling() -> bool:
             return False
 
-    torch.compiler = _TorchCompilerCompat()  # type: ignore[attr-defined]
+        torch.compiler.is_compiling = _torch_compiler_is_compiling  # type: ignore[attr-defined]
 
 
 def build_mask_generator(device: str, model_id: str) -> Pipeline:
