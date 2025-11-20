@@ -136,12 +136,8 @@ def augment_with_event_meta(share_root: Path, entry: ClipEntry) -> None:
     if isinstance(max_conf, (int, float)):
         entry.max_conf = float(max_conf)
 
-    counts = meta.get("counts") or {}
-    tags = set(entry.tags or [])
-    for label, count in counts.items():
-        if count:
-            tags.add(label)
-    entry.tags = sorted(tags)
+    # Keep detector-derived labels in meta.json only; `entry.tags` are reserved
+    # for human-applied semantics managed via the UI.
     entry.detector_model = entry.detector_model or "mdv5_ultralytics"
 
 
