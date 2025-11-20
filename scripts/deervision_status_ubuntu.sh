@@ -152,10 +152,9 @@ main() {
     print_header "Pipeline Processes"
     # Edit this list to match the long-running jobs you care about.
     local processes=(
-        "reolink_ingest:reolink_stream_ingest.py"
-        "megadetector_live:live_megadetector.py"
-        "mdv5_batch:mdv5_process_video.py"
-        "prune_segments:prune_segments_without_events.py"
+        "ingest_live:reolink_stream_ingest.py"
+        "detector_live:live_megadetector.py"
+        "cleanup_prune:prune_segments_without_events.py"
     )
     local entry label pattern
     for entry in "${processes[@]}"; do
