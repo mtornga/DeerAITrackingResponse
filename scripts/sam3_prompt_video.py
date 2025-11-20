@@ -36,10 +36,14 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-try:  # ensure our compatibility shims (sitecustomize) load even if PYTHONPATH wasn't set
-    import sitecustomize  # type: ignore  # noqa: F401
-except ImportError:
-    pass
+compat_file = PROJECT_ROOT / "sitecustomize.py"
+if compat_file.exists():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("deer_sitecustomize", compat_file)
+    if spec and spec.loader:
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
 
 SAM3_REPO = PROJECT_ROOT / "external" / "sam3"
 if not SAM3_REPO.exists():
