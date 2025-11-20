@@ -148,13 +148,6 @@ def augment_with_event_meta(share_root: Path, entry: ClipEntry) -> None:
     if isinstance(max_conf, (int, float)):
         entry.max_conf = float(max_conf)
 
-    counts = meta.get("counts") or {}
-    tags = set(entry.tags or [])
-    for label, count in counts.items():
-        if count:
-            tags.add(label)
-    entry.tags = sorted(tags)
-
 
 def save_index(index_path: Path, clips: Dict[str, ClipEntry]) -> None:
     payload = {
