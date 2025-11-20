@@ -71,13 +71,13 @@ def discover_segments(segments_root: Path) -> List[Path]:
     ]
 
 
-def load_index(index_path: Path) -> Dict[str, ClipEntry]:
+def load_index(index_path: Path) -> Tuple[Dict[str, ClipEntry], List[str]]:
     if not index_path.exists():
-        return {}
+        return {}, []
     try:
         raw = json.loads(index_path.read_text())
     except json.JSONDecodeError:
-        return {}
+        return {}, []
 
     clips: Dict[str, ClipEntry] = {}
     for clip_id, data in (raw.get("clips") or {}).items():
@@ -93,13 +93,16 @@ def load_index(index_path: Path) -> Dict[str, ClipEntry]:
             notes=data.get("notes", ""),
         )
         clips[clip_id] = entry
-    return clips
+
+    tag_vocabulary = [str(t).strip() for t in (raw.get("tag_vocabulary") or []) if str(t).strip()]
+    return clips, tag_vocabulary
 
 
-def save_index(index_path: Path, clips: Dict[str, ClipEntry]) -> None:
+def save_index(index_path: Path, clips: Dict[str, ClipEntry], tag_vocabulary: List[str]) -> None:
     payload = {
         "version": 1,
         "updated_at": _now_iso(),
+        "tag_vocabulary": sorted(set(tag_vocabulary)),
         "clips": {
             clip_id: {
                 **asdict(entry),
@@ -142,8 +145,10 @@ def augment_with_event_meta(share_root: Path, entry: ClipEntry) -> None:
     entry.detector_model = entry.detector_model or "mdv5_ultralytics"
 
 
-def build_index(share_root: Path, segments_root: Path, index_path: Path) -> Dict[str, ClipEntry]:
-    existing = load_index(index_path)
+def build_index(
+    share_root: Path, segments_root: Path, index_path: Path
+) -> Tuple[Dict[str, ClipEntry], List[str]]:
+    existing, tag_vocabulary = load_index(index_path)
 
     for segment_path in discover_segments(segments_root):
         try:
@@ -170,8 +175,9 @@ def build_index(share_root: Path, segments_root: Path, index_path: Path) -> Dict
 
         augment_with_event_meta(share_root, entry)
 
-    # Do not write back here; the CLI can own serialization.
-    return existing
+    # Do not write back here; the CLI can own serialization. We return the updated
+    # clips and whatever tag vocabulary currently exists on disk.
+    return existing, tag_vocabulary
 
 
 def clip_bucket_local(entry: ClipEntry) -> datetime:
@@ -206,6 +212,13 @@ def main() -> None:
         st.warning(f"No segment directory found at {segments_root}")
         return
 
+    # Tag vocabulary management
+    st.sidebar.subheader("Tag vocabulary")
+    st.sidebar.caption(
+        "These tags are suggested in addition to any labels derived from detections."
+    )
+    # tag_vocabulary will be loaded below via build_index; for now use an empty list
+
     # Filters
     status: ReviewStatus = st.sidebar.selectbox(
         "Status", options=["pending", "in_progress", "done"], index=0
@@ -216,7 +229,24 @@ def main() -> None:
     )
     limit = st.sidebar.number_input("Max clips to show", min_value=1, max_value=200, value=40)
 
-    clips = build_index(share_root, segments_root, index_path)
+    clips, tag_vocabulary = build_index(share_root, segments_root, index_path)
+
+    # Show and edit tag vocabulary
+    existing_vocab_str = ", ".join(sorted(tag_vocabulary)) if tag_vocabulary else "(none yet)"
+    st.sidebar.text(f"Current: {existing_vocab_str}")
+    new_tag = st.sidebar.text_input(
+        "Add tag to vocabulary", "",
+        help="Examples: easy_eval, snow, lawnmower, spiderweb.",
+    )
+    if st.sidebar.button("Add tag", key="add-tag"):
+        tag = new_tag.strip()
+        if tag:
+            if tag not in tag_vocabulary:
+                tag_vocabulary.append(tag)
+                save_index(index_path, clips, tag_vocabulary)
+                st.sidebar.success(f"Added tag '{tag}' to vocabulary.")
+            else:
+                st.sidebar.info(f"Tag '{tag}' is already in the vocabulary.")
     filtered: List[ClipEntry] = []
     for entry in clips.values():
         if entry.review_status != status:
@@ -281,7 +311,7 @@ def main() -> None:
         for e in clips.values():
             all_tags.update(e.tags or [])
         default_tag_options = {"person", "animal", "vehicle", "hard_eval", "snow", "false_positive"}
-        tag_options = sorted(all_tags.union(default_tag_options))
+        tag_options = sorted(all_tags.union(default_tag_options).union(tag_vocabulary))
         selected_tags = st.multiselect(
             "Tags",
             options=tag_options,
@@ -328,7 +358,7 @@ def main() -> None:
             selected.review_status = new_status
             selected.tags = selected_tags
             selected.notes = notes
-            save_index(index_path, clips)
+            save_index(index_path, clips, tag_vocabulary)
             st.success("Saved feedback for this clip. Rerun filters to refresh the list.")
 
 
