@@ -125,6 +125,37 @@ def load_index(index_path: Path) -> Dict[str, ClipEntry]:
     return clips
 
 
+def augment_with_event_meta(share_root: Path, entry: ClipEntry) -> None:
+    """Augment a clip entry with event metadata from the events directory, if present."""
+
+    try:
+        rel_path = Path(entry.path)
+        date = rel_path.parent.name
+        stem = rel_path.stem
+    except Exception:
+        return
+
+    meta_path = share_root / "runs" / "live" / "events" / date / stem / "meta.json"
+    if not meta_path.exists():
+        return
+
+    try:
+        meta = json.loads(meta_path.read_text())
+    except json.JSONDecodeError:
+        return
+
+    max_conf = meta.get("max_confidence")
+    if isinstance(max_conf, (int, float)):
+        entry.max_conf = float(max_conf)
+
+    counts = meta.get("counts") or {}
+    tags = set(entry.tags or [])
+    for label, count in counts.items():
+        if count:
+            tags.add(label)
+    entry.tags = sorted(tags)
+
+
 def save_index(index_path: Path, clips: Dict[str, ClipEntry]) -> None:
     payload = {
         "version": 1,
@@ -152,24 +183,23 @@ def build_or_update_index(
             rel = segment_path.relative_to(segments_root)
 
         clip_id = str(rel)
-        if clip_id in existing:
-            # Keep existing metadata; update capture_mtime if it changed.
-            entry = existing[clip_id]
-            mtime = segment_path.stat().st_mtime
-            if mtime != entry.capture_mtime:
-                entry.capture_mtime = mtime
-            continue
-
         stat = segment_path.stat()
-        entry = ClipEntry(
-            clip_id=clip_id,
-            path=str(rel),
-            first_seen=_now_iso(),
-            capture_mtime=stat.st_mtime,
-            review_status="pending",
-            tags=[],
-        )
-        existing[clip_id] = entry
+        if clip_id in existing:
+            entry = existing[clip_id]
+            if stat.st_mtime != entry.capture_mtime:
+                entry.capture_mtime = stat.st_mtime
+        else:
+            entry = ClipEntry(
+                clip_id=clip_id,
+                path=str(rel),
+                first_seen=_now_iso(),
+                capture_mtime=stat.st_mtime,
+                review_status="pending",
+                tags=[],
+            )
+            existing[clip_id] = entry
+
+        augment_with_event_meta(share_root, entry)
 
     return existing
 
@@ -199,6 +229,17 @@ def main(argv: Optional[List[str]] = None) -> int:
         help="Filter by review_status (default: %(default)s).",
     )
     parser.add_argument(
+        "--events-only",
+        action="store_true",
+        help="Only show clips that have event metadata (i.e., promoted to runs/live/events).",
+    )
+    parser.add_argument(
+        "--min-max-conf",
+        type=float,
+        default=0.0,
+        help="Minimum max_detection_conf required to show a clip (default: %(default)s).",
+    )
+    parser.add_argument(
         "--limit",
         type=int,
         default=20,
@@ -224,9 +265,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     save_index(index_path, clips)
 
     # Filter and sort for display.
-    filtered = [
-        entry for entry in clips.values() if entry.review_status == args.status  # type: ignore[comparison-overlap]
-    ]
+    filtered: List[ClipEntry] = []
+    for entry in clips.values():
+        if entry.review_status != args.status:  # type: ignore[comparison-overlap]
+            continue
+        if args.events_only and (entry.max_conf is None or entry.max_conf <= 0.0):
+            continue
+        if args.min_max_conf > 0.0:
+            if entry.max_conf is None or entry.max_conf < args.min_max_conf:
+                continue
+        filtered.append(entry)
     filtered.sort(key=lambda e: e.capture_mtime, reverse=True)
 
     print(
@@ -236,7 +284,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     print("status       max   capture_time          tags                 path")
     print("-" * 80)
 
+    prev_bucket: Optional[datetime] = None
     for entry in filtered[: args.limit]:
+        bucket = datetime.fromtimestamp(entry.capture_mtime).astimezone().replace(
+            minute=0, second=0, microsecond=0
+        )
+        if prev_bucket != bucket:
+            print(f"\n== {bucket.strftime('%Y-%m-%d %H:00 %Z')} ==")
+            prev_bucket = bucket
         print(format_clip_row(entry))
 
     if not filtered:
@@ -247,4 +302,3 @@ def main(argv: Optional[List[str]] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
