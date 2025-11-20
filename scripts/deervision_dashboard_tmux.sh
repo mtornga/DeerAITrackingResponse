@@ -20,7 +20,8 @@ fi
 
 SESSION_NAME="deervision-dashboard"
 UBUNTU_HOST="${DEERVISION_UBUNTU_HOST:-192.168.68.71}"
-UBUNTU_REPO_PATH="${DEERVISION_UBUNTU_REPO_PATH:-~/DeerAITrackingResponse}"
+UBUNTU_USER="${DEERVISION_UBUNTU_USER:-mtornga}"
+UBUNTU_REPO_PATH="${DEERVISION_UBUNTU_REPO_PATH:-~/projects/DeerAITrackingResponse}"
 
 # SSH options tuned for unattended use in tmux panes.
 SSH_OPTS="-o ConnectTimeout=5 -o StrictHostKeyChecking=no"
@@ -44,17 +45,17 @@ tmux send-keys -t "${SESSION_NAME}:0.0" "while true; do clear; scripts/deervisio
 
 # Pane 1 (right): Ubuntu status (refresh loop).
 tmux split-window -h -t "${SESSION_NAME}:0"
-ubuntu_status_cmd="while true; do clear; ssh ${SSH_OPTS} ${UBUNTU_HOST} \"cd ${UBUNTU_REPO_PATH} && scripts/deervision_status_ubuntu.sh\" || { echo 'Ubuntu status: SSH failed'; sleep 5; }; sleep 15; done"
+ubuntu_status_cmd="while true; do clear; ssh ${SSH_OPTS} ${UBUNTU_USER}@${UBUNTU_HOST} \"cd ${UBUNTU_REPO_PATH} && scripts/deervision_status_ubuntu.sh\" || { echo 'Ubuntu status: SSH failed'; sleep 5; }; sleep 15; done"
 tmux send-keys -t "${SESSION_NAME}:0.1" "${ubuntu_status_cmd}" C-m
 
 # Pane 2 (bottom-left): Ubuntu CPU/GPU live view.
 tmux split-window -v -t "${SESSION_NAME}:0.0"
-ubuntu_monitor_cmd="ssh ${SSH_OPTS} ${UBUNTU_HOST} 'if command -v htop >/dev/null 2>&1; then htop; else top; fi'"
+ubuntu_monitor_cmd="ssh ${SSH_OPTS} ${UBUNTU_USER}@${UBUNTU_HOST} 'if command -v htop >/dev/null 2>&1; then htop; else top; fi'"
 tmux send-keys -t "${SESSION_NAME}:0.2" "${ubuntu_monitor_cmd}" C-m
 
 # Pane 3 (bottom-right): Ubuntu logs tail.
 tmux split-window -v -t "${SESSION_NAME}:0.1"
-ubuntu_logs_cmd="ssh ${SSH_OPTS} ${UBUNTU_HOST} \"cd ${UBUNTU_REPO_PATH} && scripts/deervision_tail_logs.sh\""
+ubuntu_logs_cmd="ssh ${SSH_OPTS} ${UBUNTU_USER}@${UBUNTU_HOST} \"cd ${UBUNTU_REPO_PATH} && scripts/deervision_tail_logs.sh\""
 tmux send-keys -t "${SESSION_NAME}:0.3" "${ubuntu_logs_cmd}" C-m
 
 tmux select-layout -t "${SESSION_NAME}:0" tiled >/dev/null 2>&1 || true
