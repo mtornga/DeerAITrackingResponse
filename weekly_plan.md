@@ -81,17 +81,14 @@ This plan focuses on bridging the gap between the Mac (Control) and Ubuntu (Comp
 
 7.  **Daily Review Workflow Skeleton:** Create a placeholder script `scripts/daily_review.py` that simulates the "morning review" process: finding new clips on the share, and listing them for the user.
     - Vision: At 8–9am, mtornga sits down and is presented with a prioritized list of clips needing input (false positives, misses, edge cases, labeling opportunities) instead of hunting through directories.
-    - Idea (CLI first): Start with a text-based CLI that:
-        * Scans the Samba share for new/unreviewed segments (e.g., under `/srv/deer-share/runs/live/segments`).
-        * Applies simple heuristics (metadata flags, recent MegaDetector scores, “edge-case” tags) to sort clips by usefulness.
-        * Prints a concise queue with suggested actions (e.g., "review", "label snow edge case", "mark as hard eval").
-    - Data design: Introduce a lightweight JSON (or CSV) index on the share (e.g., `/srv/deer-share/index/daily_review_index.json`) that tracks per-clip state:
-        * clip_id, path, capture time, detector model version, max_conf, any existing labels/tags, and review_status (`pending`, `in_progress`, `done`).
-        * This index becomes the sedimentary record the “archaeologist” can interpret later.
-    - Agent ergonomics: Keep the script idempotent and pure-read of the index by default; writing back decisions should be explicit (e.g., `--apply` flag) so experiments on ranking logic are safe.
-    - Future evolution: Once the CLI flow feels right, promote it to a small web UI (Streamlit or similar) that:
-        * Shows thumbnails or short GIFs for each clip.
-        * Lets mtornga click buttons to apply tags like “hard eval”, “snow”, “false positive”, “unknown animal”.
+    - Status (pipeline): The ingest (`reolink_stream_ingest.py`) and live detector (`live_megadetector.py`) now write segments and MegaDetector-style JSON into `/srv/deer-share/runs/live/{analysis,detections,events}`, with eventful clips promoted into `events/` along with `detections.json` and `meta.json`.
+    - Status (index/CLI): `scripts/daily_review.py` maintains `/srv/deer-share/index/daily_review_index.json`, tracking per-clip state (clip_id, path, capture time, detector model name, `max_conf`, human-applied `tags`, `review_status`). It can filter by `status`, `events-only`, and `min-max-conf`, and groups clips by local hour.
+    - Status (UI): `scripts/daily_review_app.py` provides a Streamlit-based morning review UI:
+        * Left: time-bucketed list of clips, filtered to eventful segments above a confidence threshold.
+        * Right: embedded video player, editable `review_status`, editable semantic `tags`, and free-form `notes`.
+        * Reads detector-derived labels from `meta.json` but keeps them separate from human tags.
+    - Tag vocabulary: The UI sidebar exposes a simple “tag vocabulary” manager (e.g., `easy_eval`, `snow`, `lawnmower`), persisted alongside the index so future agents can reuse the same tag set.
+    - Next evolution: Use these human labels downstream (e.g., to define “hard eval” sets, drive retraining, or bias future ranking), and eventually add richer UI affordances (thumbnails, keyboard shortcuts) once the core review loop feels right.
 
 8.  **Dashboard Update:** Update `scripts/deervision_dashboard_tmux.sh` to point to the new remote directory paths and verify it correctly reports Ubuntu status.
     - Idea: Dashboard should assume `~/projects/DeerAITrackingResponse` as the default root on Ubuntu going forward.
