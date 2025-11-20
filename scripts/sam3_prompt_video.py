@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import cv2
+from PIL import Image
 import numpy as np
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -54,13 +55,17 @@ if not SAM3_REPO.exists():
 
 sys.path.append(str(SAM3_REPO))
 
-from sam3.model_builder import build_sam3_video_predictor  # type: ignore  # noqa: E402
+from sam3.model_builder import (  # type: ignore  # noqa: E402
+    build_sam3_image_model,
+    build_sam3_video_predictor,
+)
+from sam3.model.sam3_image_processor import Sam3Processor  # type: ignore  # noqa: E402
 from sam3.visualization_utils import render_masklet_frame  # type: ignore  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run SAM3 video predictor with a text prompt.",
+        description="Run SAM3 predictor with a text prompt (GPU video tracker or CPU frame-by-frame).",
     )
     parser.add_argument("--video-path", type=Path, required=True, help="Input MP4 path.")
     parser.add_argument(
@@ -106,6 +111,11 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=0.6,
         help="Mask overlay alpha when rendering (0 = transparent, 1 = opaque).",
+    )
+    parser.add_argument(
+        "--cpu-only",
+        action="store_true",
+        help="Process each frame independently on CPU using the SAM3 image model (slow, no temporal tracking).",
     )
     return parser.parse_args()
 
@@ -212,9 +222,104 @@ def render_tracked_video(
         writer.release()
 
 
+def run_cpu_image_prompt(
+    video_path: Path,
+    prompt: str,
+    output_video: Path,
+    mask_alpha: float,
+    max_frames: Optional[int],
+) -> None:
+    model = build_sam3_image_model(device="cpu", enable_inst_interactivity=False)
+    processor = Sam3Processor(model=model, device="cpu")
+
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        raise RuntimeError(f"Could not open video: {video_path}")
+
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    output_video.parent.mkdir(parents=True, exist_ok=True)
+    writer = cv2.VideoWriter(
+        str(output_video),
+        cv2.VideoWriter_fourcc(*"mp4v"),
+        fps,
+        (width, height),
+    )
+
+    frame_idx = 0
+    try:
+        while True:
+            ok, frame_bgr = cap.read()
+            if not ok:
+                break
+            frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+            pil_img = Image.fromarray(frame_rgb)
+            state = processor.set_image(pil_img, state={})
+            state = processor.set_text_prompt(prompt, state)
+            outputs = convert_state_to_outputs(state, height, width)
+            if outputs["out_obj_ids"]:
+                overlay_rgb = render_masklet_frame(
+                    frame_rgb, outputs, frame_idx=frame_idx, alpha=mask_alpha
+                )
+                frame_bgr = cv2.cvtColor(overlay_rgb, cv2.COLOR_RGB2BGR)
+            writer.write(frame_bgr)
+            frame_idx += 1
+            if max_frames is not None and frame_idx >= max_frames:
+                break
+    finally:
+        cap.release()
+        writer.release()
+
+
+def convert_state_to_outputs(
+    state: Dict, img_h: int, img_w: int
+) -> Dict[str, List]:
+    outputs = {
+        "out_boxes_xywh": [],
+        "out_probs": [],
+        "out_obj_ids": [],
+        "out_binary_masks": [],
+    }
+    boxes = state.get("boxes")
+    masks = state.get("masks")
+    scores = state.get("scores")
+
+    if boxes is None or masks is None or boxes.numel() == 0:
+        return outputs
+
+    boxes_np = boxes.cpu().numpy()
+    masks_np = masks.squeeze(1).cpu().numpy()
+    scores_np = scores.cpu().numpy() if scores is not None else np.ones(len(boxes_np))
+
+    for idx, (box, mask, score) in enumerate(zip(boxes_np, masks_np, scores_np)):
+        x1, y1, x2, y2 = box
+        w = max(x2 - x1, 1.0)
+        h = max(y2 - y1, 1.0)
+        outputs["out_boxes_xywh"].append(
+            [x1 / img_w, y1 / img_h, w / img_w, h / img_h]
+        )
+        outputs["out_probs"].append(float(score))
+        outputs["out_obj_ids"].append(idx)
+        outputs["out_binary_masks"].append(mask > 0.5)
+
+    return outputs
+
+
 def main() -> None:
     args = parse_args()
     ensure_video_exists(args.video_path)
+
+    if args.cpu_only:
+        run_cpu_image_prompt(
+            video_path=args.video_path,
+            prompt=args.prompt,
+            output_video=args.output_video,
+            mask_alpha=args.mask_alpha,
+            max_frames=args.max_frames,
+        )
+        return
 
     predictor = build_predictor(gpus=args.gpus)
 
