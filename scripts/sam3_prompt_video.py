@@ -32,6 +32,7 @@ from typing import Dict, List, Optional
 import cv2
 from PIL import Image
 import numpy as np
+import torch
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
