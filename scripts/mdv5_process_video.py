@@ -6,31 +6,12 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-
-import cv2
-import sys
 from typing import Dict, List
 
+import cv2
 import numpy as np
 import torch
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-EXTERNAL_ROOT = REPO_ROOT / "external"
-YOLOV5_ROOT = EXTERNAL_ROOT / "yolov5"
-
-# Backwards-compatible fallback to legacy tmp/ layout if external/ is not populated yet.
-if not YOLOV5_ROOT.exists():
-    legacy_root = REPO_ROOT / "tmp" / "yolov5"
-    if legacy_root.exists():
-        YOLOV5_ROOT = legacy_root
-
-if YOLOV5_ROOT.exists():
-    sys.path.insert(0, str(YOLOV5_ROOT))
-
-from models.common import DetectMultiBackend  # type: ignore
-from utils.augmentations import letterbox  # type: ignore
-from utils.general import non_max_suppression, scale_boxes  # type: ignore
-from utils.torch_utils import select_device  # type: ignore
+from ultralytics import YOLO
 
 
 def parse_args() -> argparse.Namespace:
@@ -50,18 +31,15 @@ def parse_args() -> argparse.Namespace:
 MD_CATEGORIES = {"1": "animal", "2": "person", "3": "vehicle"}
 
 
-def load_model(path: Path, device: str) -> tuple[DetectMultiBackend, torch.device, List[str], int]:
-    device_sel = select_device(device)
-    model = DetectMultiBackend(str(path), device=device_sel, dnn=False)
-    stride = int(model.stride)
-    names = model.names
-    return model, device_sel, names, stride
-
-
 def main() -> int:
     args = parse_args()
-    model, device, names, stride = load_model(args.model_path, args.device)
-    imgsz = (640, 640)
+    # Let Ultralytics handle device selection; optional override via args.device.
+    model = YOLO(str(args.model_path))
+    if isinstance(model.names, dict):
+        names: Dict[int, str] = {int(k): v for k, v in model.names.items()}
+    else:
+        names = {i: n for i, n in enumerate(model.names)}
+
     cap = cv2.VideoCapture(str(args.video_path))
     if not cap.isOpened():
         raise SystemExit(f"Unable to open video: {args.video_path}")
@@ -76,49 +54,41 @@ def main() -> int:
             if args.frame_sample > 1 and frame_idx % args.frame_sample != 0:
                 frame_idx += 1
                 continue
-
             h, w = frame.shape[:2]
             detections = []
             max_conf = 0.0
-            img = letterbox(frame, imgsz, stride=stride, auto=model.pt)[0]
-            img = img.transpose((2, 0, 1))
-            img = np.ascontiguousarray(img)
-            im = torch.from_numpy(img).to(device)
-            im = im.float() / 255.0
-            if im.ndimension() == 3:
-                im = im.unsqueeze(0)
+            # Run a single-image prediction. Ultralytics handles preprocessing internally.
+            results = model(frame, verbose=False, device=args.device or None)
+            if results:
+                r = results[0]
+                boxes = r.boxes
+                if boxes is not None and len(boxes) > 0:
+                    xyxy = boxes.xyxy.cpu().numpy()
+                    confs = boxes.conf.cpu().numpy()
+                    clses = boxes.cls.cpu().numpy()
 
-            pred = model(im)
-            det = non_max_suppression(
-                pred,
-                conf_thres=0.001,
-                iou_thres=0.45,
-                max_det=300,
-            )[0]
-
-            if len(det):
-                det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], frame.shape).round()
-                for *xyxy, conf, cls in det:
-                    conf = float(conf)
-                    if conf < args.json_confidence_threshold:
-                        continue
-                    class_id = int(cls)
-                    label = names.get(class_id, str(class_id)) if isinstance(names, dict) else str(class_id)
-                    if "person" in label.lower():
-                        category = "2"
-                    elif "vehicle" in label.lower():
-                        category = "3"
-                    else:
-                        category = "1"
-                    x1, y1, x2, y2 = [float(v) for v in xyxy]
-                    bbox = [
-                        max(0.0, x1 / w),
-                        max(0.0, y1 / h),
-                        min(1.0, (x2 - x1) / w),
-                        min(1.0, (y2 - y1) / h),
-                    ]
-                    detections.append({"category": category, "conf": conf, "bbox": bbox})
-                    max_conf = max(max_conf, conf)
+                    for (x1, y1, x2, y2), conf, cls in zip(xyxy, confs, clses):
+                        conf_f = float(conf)
+                        if conf_f < args.json_confidence_threshold:
+                            continue
+                        class_id = int(cls)
+                        label = names.get(class_id, str(class_id))
+                        label_lower = label.lower()
+                        if "person" in label_lower:
+                            category = "2"
+                        elif any(k in label_lower for k in ("vehicle", "car", "truck")):
+                            category = "3"
+                        else:
+                            category = "1"
+                        x1_f, y1_f, x2_f, y2_f = float(x1), float(y1), float(x2), float(y2)
+                        bbox = [
+                            max(0.0, x1_f / w),
+                            max(0.0, y1_f / h),
+                            min(1.0, (x2_f - x1_f) / w),
+                            min(1.0, (y2_f - y1_f) / h),
+                        ]
+                        detections.append({"category": category, "conf": conf_f, "bbox": bbox})
+                        max_conf = max(max_conf, conf_f)
 
             images.append(
                 {
