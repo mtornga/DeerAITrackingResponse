@@ -199,6 +199,9 @@ def process_video(
     model_id: str,
     max_frames: int | None = None,
     min_area_ratio: float = 0.0005,
+    resize_width: int | None = None,
+    resize_height: int | None = None,
+    generator_kwargs: dict[str, Any] | None = None,
 ) -> None:
     """
     Run SAM 3 mask generation on every frame of `video_path` and write an annotated video.
@@ -237,12 +240,18 @@ def process_video(
             if not ok:
                 break
 
-            image_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+            resized_frame = frame_bgr
+            if resize_width or resize_height:
+                target_w = resize_width or int(width * (resize_height / height))
+                target_h = resize_height or int(height * (target_w / width))
+                resized_frame = cv2.resize(frame_bgr, (target_w, target_h), interpolation=cv2.INTER_AREA)
+
+            image_rgb = cv2.cvtColor(resized_frame, cv2.COLOR_BGR2RGB)
             pil_image = Image.fromarray(image_rgb)
 
             outputs = mask_generator(
                 pil_image,
-                points_per_batch=128,
+                **(generator_kwargs or {}),
             )
 
             if isinstance(outputs, dict):
@@ -261,7 +270,9 @@ def process_video(
                 keep = areas >= (min_area_ratio * frame_area)
                 masks = masks[keep]
 
-            annotated = overlay_masks(frame_bgr, masks)
+            annotated = overlay_masks(resized_frame, masks)
+            if resized_frame is not frame_bgr:
+                annotated = cv2.resize(annotated, (width, height), interpolation=cv2.INTER_LINEAR)
             writer.write(annotated)
 
             frame_index += 1
@@ -314,6 +325,42 @@ def parse_args() -> argparse.Namespace:
         help="Hugging Face model id to use (default: facebook/sam3). "
         "For local testing without gated access, you can try facebook/sam-vit-base.",
     )
+    parser.add_argument(
+        "--resize-width",
+        type=int,
+        default=None,
+        help="Resize frames to this width before inference (height scaled to preserve aspect).",
+    )
+    parser.add_argument(
+        "--resize-height",
+        type=int,
+        default=None,
+        help="Resize frames to this height before inference (width scaled to preserve aspect).",
+    )
+    parser.add_argument(
+        "--points-per-batch",
+        type=int,
+        default=32,
+        help="points_per_batch passed to the SAM3 mask generator.",
+    )
+    parser.add_argument(
+        "--crop-n-layers",
+        type=int,
+        default=0,
+        help="Crop layers for mask generation (reducing this lowers VRAM usage).",
+    )
+    parser.add_argument(
+        "--crop-overlap-ratio",
+        type=float,
+        default=512 / 1500,
+        help="Crop overlap ratio for mask generation.",
+    )
+    parser.add_argument(
+        "--pred-iou-thresh",
+        type=float,
+        default=0.88,
+        help="pred_iou_thresh used by the mask generator.",
+    )
     return parser.parse_args()
 
 
@@ -330,6 +377,14 @@ def main() -> None:
         model_id=args.model_id,
         max_frames=args.max_frames,
         min_area_ratio=args.min_area_ratio,
+        resize_width=args.resize_width,
+        resize_height=args.resize_height,
+        generator_kwargs={
+            "points_per_batch": args.points_per_batch,
+            "crop_n_layers": args.crop_n_layers,
+            "crop_overlap_ratio": args.crop_overlap_ratio,
+            "pred_iou_thresh": args.pred_iou_thresh,
+        },
     )
 
 
