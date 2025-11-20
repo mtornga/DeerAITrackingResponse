@@ -4,8 +4,10 @@ ultralytics==8.0.227
 py-cpuinfo==9.0.0
 thop==0.1.1.post2209072238
 safetensors==0.6.2
+transformers>=4.56.2
 # core scientific stack (versions already pinned in constraints.txt but included for clarity)
 scipy>=1.11
 opencv-python>=4.8
 pandas>=2.0
 tqdm>=4.65
+streamlit>=1.35
