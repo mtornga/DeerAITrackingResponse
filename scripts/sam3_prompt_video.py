@@ -26,14 +26,11 @@ from __future__ import annotations
 
 import argparse
 import sys
-from contextlib import nullcontext
 from pathlib import Path
 from typing import Dict, List, Optional
 
 import cv2
 import numpy as np
-import torch
-import importlib.util
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -41,6 +38,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 compat_file = PROJECT_ROOT / "sitecustomize.py"
 if compat_file.exists():
+    import importlib.util
+
     spec = importlib.util.spec_from_file_location("deer_sitecustomize", compat_file)
     if spec and spec.loader:
         module = importlib.util.module_from_spec(spec)
@@ -55,30 +54,8 @@ if not SAM3_REPO.exists():
 
 sys.path.append(str(SAM3_REPO))
 
-import sam3.model_builder as sam3_model_builder  # type: ignore  # noqa: E402
-
-_ORIG_BUILD_VIDEO_MODEL = sam3_model_builder.build_sam3_video_model
-
-
-def _build_video_model_fp16(*args, **kwargs):
-    model = _ORIG_BUILD_VIDEO_MODEL(*args, **kwargs)
-    sample_param = next(model.parameters(), None)
-    device = sample_param.device if sample_param is not None else torch.device("cpu")
-    if device.type == "cuda":
-        model = model.to(device=device, dtype=torch.float16)
-    return model
-
-
-sam3_model_builder.build_sam3_video_model = _build_video_model_fp16  # type: ignore[attr-defined]
-
 from sam3.model_builder import build_sam3_video_predictor  # type: ignore  # noqa: E402
 from sam3.visualization_utils import render_masklet_frame  # type: ignore  # noqa: E402
-
-
-def autocast_context():
-    if torch.cuda.is_available():
-        return torch.autocast(device_type="cuda", dtype=torch.float16)  # type: ignore[arg-type]
-    return nullcontext()
 
 
 def parse_args() -> argparse.Namespace:
@@ -153,22 +130,20 @@ def collect_track_outputs(
     max_frames: Optional[int],
 ) -> Dict[int, Dict[str, np.ndarray]]:
     # 1) Start session
-    with autocast_context():
-        start_resp = predictor.handle_request(
-            {"type": "start_session", "resource_path": str(video_path)}
-        )
+    start_resp = predictor.handle_request(
+        {"type": "start_session", "resource_path": str(video_path)}
+    )
     session_id = start_resp["session_id"]
 
     # 2) Add prompt
-    with autocast_context():
-        add_resp = predictor.handle_request(
-            {
-                "type": "add_prompt",
-                "session_id": session_id,
-                "frame_index": prompt_frame,
-                "text": prompt,
-            }
-        )
+    add_resp = predictor.handle_request(
+        {
+            "type": "add_prompt",
+            "session_id": session_id,
+            "frame_index": prompt_frame,
+            "text": prompt,
+        }
+    )
     prompt_frame_idx = add_resp.get("frame_index", prompt_frame)
 
     # 3) Propagate
@@ -183,16 +158,14 @@ def collect_track_outputs(
         if max_frames is not None:
             stream_req["max_frame_num_to_track"] = max_frames
 
-        with autocast_context():
-            for event in predictor.handle_stream_request(stream_req):
-                frame_index = int(event["frame_index"])
-                outputs = event["outputs"]
-                if not outputs:
-                    continue
-                outputs_by_frame[frame_index] = outputs
+        for event in predictor.handle_stream_request(stream_req):
+            frame_index = int(event["frame_index"])
+            outputs = event["outputs"]
+            if not outputs:
+                continue
+            outputs_by_frame[frame_index] = outputs
     finally:
-        with autocast_context():
-            predictor.handle_request({"type": "close_session", "session_id": session_id})
+        predictor.handle_request({"type": "close_session", "session_id": session_id})
 
     return outputs_by_frame
 
