@@ -9,10 +9,15 @@ older toolchain pinned in ``constraints.txt`` (e.g., PyTorch 2.2).
 
 from __future__ import annotations
 
+import enum
+import types
+
 try:
     import torch
+    import torch.nn as torch_nn
 except Exception:  # pragma: no cover - best effort fall back
     torch = None  # type: ignore[assignment]
+    torch_nn = None  # type: ignore[assignment]
 
 
 def _ensure_torch_compiler_shim() -> None:
@@ -37,5 +42,35 @@ def _ensure_torch_compiler_shim() -> None:
         compiler.is_compiling = _is_compiling  # type: ignore[attr-defined]
 
 
-_ensure_torch_compiler_shim()
+def _ensure_torch_attention_shim() -> None:
+    """Provide a minimal torch.nn.attention API for older PyTorch builds."""
+    if torch_nn is None:
+        return
 
+    if hasattr(torch_nn, "attention"):
+        return
+
+    class _SDPBackend(enum.Enum):
+        MATH = enum.auto()
+        EFFICIENT_ATTENTION = enum.auto()
+        FLASH_ATTENTION = enum.auto()
+
+    class _NoOpContext:
+        def __enter__(self):
+            return None
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    def _sdpa_kernel(_backends):
+        return _NoOpContext()
+
+    attention_mod = types.SimpleNamespace(
+        sdpa_kernel=_sdpa_kernel,
+        SDPBackend=_SDPBackend,
+    )
+    torch_nn.attention = attention_mod  # type: ignore[attr-defined]
+
+
+_ensure_torch_compiler_shim()
+_ensure_torch_attention_shim()
