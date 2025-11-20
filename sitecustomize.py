@@ -10,6 +10,7 @@ older toolchain pinned in ``constraints.txt`` (e.g., PyTorch 2.2).
 from __future__ import annotations
 
 import enum
+import sys
 import types
 
 try:
@@ -65,11 +66,11 @@ def _ensure_torch_attention_shim() -> None:
     def _sdpa_kernel(_backends):
         return _NoOpContext()
 
-    attention_mod = types.SimpleNamespace(
-        sdpa_kernel=_sdpa_kernel,
-        SDPBackend=_SDPBackend,
-    )
+    attention_mod = types.ModuleType("torch.nn.attention")
+    attention_mod.sdpa_kernel = _sdpa_kernel  # type: ignore[attr-defined]
+    attention_mod.SDPBackend = _SDPBackend  # type: ignore[attr-defined]
     torch_nn.attention = attention_mod  # type: ignore[attr-defined]
+    sys.modules["torch.nn.attention"] = attention_mod
 
 
 _ensure_torch_compiler_shim()
