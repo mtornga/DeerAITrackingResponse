@@ -33,6 +33,10 @@ def _ensure_torch_compiler_shim() -> None:
             def is_compiling() -> bool:
                 return False
 
+            @staticmethod
+            def is_dynamo_compiling() -> bool:
+                return False
+
         torch.compiler = _CompilerShim()  # type: ignore[attr-defined]
         return
 
@@ -41,6 +45,12 @@ def _ensure_torch_compiler_shim() -> None:
             return False
 
         compiler.is_compiling = _is_compiling  # type: ignore[attr-defined]
+
+    if not hasattr(compiler, "is_dynamo_compiling"):
+        def _is_dynamo_compiling() -> bool:
+            return False
+
+        compiler.is_dynamo_compiling = _is_dynamo_compiling  # type: ignore[attr-defined]
 
 
 def _ensure_torch_attention_shim() -> None:
