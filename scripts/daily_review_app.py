@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Literal, Optional, Tuple
@@ -94,6 +94,22 @@ def load_index(index_path: Path) -> Dict[str, ClipEntry]:
         )
         clips[clip_id] = entry
     return clips
+
+
+def save_index(index_path: Path, clips: Dict[str, ClipEntry]) -> None:
+    payload = {
+        "version": 1,
+        "updated_at": _now_iso(),
+        "clips": {
+            clip_id: {
+                **asdict(entry),
+                "tags": entry.tags or [],
+            }
+            for clip_id, entry in clips.items()
+        },
+    }
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    index_path.write_text(json.dumps(payload, indent=2))
 
 
 def augment_with_event_meta(share_root: Path, entry: ClipEntry) -> None:
@@ -252,10 +268,36 @@ def main() -> None:
         selected = next((e for e in filtered if e.clip_id == selected_id), filtered[0])
 
         st.markdown(f"**Clip:** `{selected.path}`")
+
+        # Editable review fields
+        status_options: List[ReviewStatus] = ["pending", "in_progress", "done"]
+        current_status_index = status_options.index(selected.review_status)
+        new_status: ReviewStatus = st.radio(
+            "Review status", status_options, index=current_status_index, horizontal=True
+        )
+
+        # Tag suggestions: union of all tags plus some common ones
+        all_tags = set()
+        for e in clips.values():
+            all_tags.update(e.tags or [])
+        default_tag_options = {"person", "animal", "vehicle", "hard_eval", "snow", "false_positive"}
+        tag_options = sorted(all_tags.union(default_tag_options))
+        selected_tags = st.multiselect(
+            "Tags",
+            options=tag_options,
+            default=selected.tags or [],
+            help="Semantic tags to help future reviewers and experiments.",
+        )
+
+        notes = st.text_area(
+            "Notes",
+            value=selected.notes or "",
+            height=120,
+            help="Optional free-form notes about why this clip is interesting.",
+        )
+
         st.markdown(
-            f"- **Status:** {selected.review_status}\n"
             f"- **Max confidence:** {selected.max_conf if selected.max_conf is not None else '-'}\n"
-            f"- **Tags:** {', '.join(selected.tags or []) or '-'}\n"
             f"- **First seen:** {selected.first_seen}\n"
         )
 
@@ -270,19 +312,25 @@ def main() -> None:
         meta_path = events_dir / "meta.json"
         detections_path = events_dir / "detections.json"
 
-        with st.expander("Event metadata (read-only)", expanded=False):
+        with st.expander("Event metadata", expanded=False):
             if meta_path.exists():
                 st.json(json.loads(meta_path.read_text()))
             else:
                 st.write("No meta.json found for this clip.")
 
-        with st.expander("Raw detections (read-only)", expanded=False):
+        with st.expander("Raw detections", expanded=False):
             if detections_path.exists():
                 st.json(json.loads(detections_path.read_text()))
             else:
                 st.write("No detections.json found for this clip.")
 
+        if st.button("Save feedback", key=f"save-{selected.clip_id}"):
+            selected.review_status = new_status
+            selected.tags = selected_tags
+            selected.notes = notes
+            save_index(index_path, clips)
+            st.success("Saved feedback for this clip. Rerun filters to refresh the list.")
+
 
 if __name__ == "__main__":
     main()
-
