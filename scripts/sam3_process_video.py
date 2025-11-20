@@ -41,6 +41,15 @@ except ImportError:  # pragma: no cover - torch is required by constraints.txt
     torch = None  # type: ignore[assignment]
 
 
+if torch is not None and not hasattr(torch, "compiler"):
+    class _TorchCompilerCompat:
+        @staticmethod
+        def is_compiling() -> bool:
+            return False
+
+    torch.compiler = _TorchCompilerCompat()  # type: ignore[attr-defined]
+
+
 def build_mask_generator(device: str, model_id: str) -> Pipeline:
     """
     Construct a Hugging Face `mask-generation` pipeline for SAM 3.
