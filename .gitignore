@@ -3,6 +3,7 @@ __pycache__/
 *.DS_Store
 .venv/
 .env
+.mcp.json
 *.log
 
 # IDEs
