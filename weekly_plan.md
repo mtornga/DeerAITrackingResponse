@@ -92,15 +92,16 @@ This plan focuses on bridging the gap between the Mac (Control) and Ubuntu (Comp
 
 8.  **Dashboard Update:** Update `scripts/deervision_dashboard_tmux.sh` to point to the new remote directory paths and verify it correctly reports Ubuntu status.
     - Idea: Dashboard should assume `~/projects/DeerAITrackingResponse` as the default root on Ubuntu going forward.
-    - TODO (repo/remote): Update any stale `deer-vision` paths in the script and test the tmux layout on Ubuntu.
+    - Status: COMPLETE. Script already defaults to `/home/${UBUNTU_USER}/projects/DeerAITrackingResponse` (line 31).
 
 9.  **Agent Access Config:** Create a `AGENTS_REMOTE.md` file specifically for agents, detailing the SSH commands, paths, and constraints for using the Ubuntu server autonomously.
     - Idea: This document becomes the contract for future agents (what they may run, where data lives, and safety constraints).
-    - TODO (repo): Draft `AGENTS_REMOTE.md` with concrete examples (e.g., how to launch training, run eval, or inspect logs).
+    - Status: COMPLETE. `AGENTS_REMOTE.md` created with SSH patterns, environment activation, common tasks, safety constraints, and disk management guidelines.
 
 10. **Documentation Sync:** Update `README.md` to reflect the new unified structure, the role of the `external` directory, and the standard commands for remote execution.
-    - TODO (repo): Fold the Medium-level plan and NewNotes vision into a concise "Architecture" and "Daily Workflow" section.
+    - Status: PARTIAL. Fixed stale `deer-vision` path reference. `CLAUDE.md` added with comprehensive project context.
     - Note: Keep `README.md` focused on onboarding humans; cross-link deeper agent instructions to `AGENTS.md` and `AGENTS_REMOTE.md`.
+    - Future TODO: Fold the Medium-level plan and NewNotes vision into a concise "Architecture" and "Daily Workflow" section in README.
 
 11. **Disk Hygiene / Env Consolidation:** Reduce root disk pressure by consolidating Python environments and relocating heavy scratch data.
     - Observation: Root (`/`) is still ~93% used on Ubuntu; the largest user under `/home/mtornga` is project-related state:
