@@ -104,13 +104,8 @@ This plan focuses on bridging the gap between the Mac (Control) and Ubuntu (Comp
     - Future TODO: Fold the Medium-level plan and NewNotes vision into a concise "Architecture" and "Daily Workflow" section in README.
 
 11. **Disk Hygiene / Env Consolidation:** Reduce root disk pressure by consolidating Python environments and relocating heavy scratch data.
-    - Observation: Root (`/`) is still ~93% used on Ubuntu; the largest user under `/home/mtornga` is project-related state:
-        * `~/projects/DeerAITrackingResponse/.venv` ≈ 5.2G (new canonical Python env).
-        * `~/.local/share/mamba/envs/deer` ≈ 6.5G (legacy mamba env).
-        * `~/projects/cvat-share` ≈ 1.9G (CVAT artifacts/scratch).
-    - Policy: Treat `.venv` in `~/projects/DeerAITrackingResponse` as the *only* supported Deer Vision runtime env going forward; the mamba `deer` env is considered legacy.
-    - TODO (manual/remote): Once comfortable that nothing else depends on `~/.local/share/mamba/envs/deer`, remove it to reclaim ~6.5G:
-        * `rm -rf ~/.local/share/mamba/envs/deer`
-      (This should drop root usage from ~93% toward the mid-80s.)
+    - Status: COMPLETE. Root disk now at 40% (186G/492G). Legacy mamba env already removed.
+    - Policy: Treat `.venv` in `~/projects/DeerAITrackingResponse` as the *only* supported Deer Vision runtime env.
+    - Documented in `AGENTS_REMOTE.md`: disk management guidelines and cleanup procedures.
     - Future TODO (ops): Mount `/srv/deer-share` on the dedicated USB drive (UUID `F04815E200F815F8`) so it becomes a true separate volume for clips, CVAT exports, and other heavy assets.
     - Future TODO (repo): Document a layout where heavy scratch directories (e.g., `cvat-share`, `runs/`, `external/`) live on `/srv/deer-share` with symlinks from `~/projects`, allowing agents to move space-hungry artifacts off the root disk without breaking paths.
