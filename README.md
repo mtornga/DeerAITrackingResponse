@@ -81,7 +81,7 @@ Get a quick health read on the Mac, Ubuntu server, and background jobs by launch
 
 1. Make sure SSH keys are loaded (once per login).
    - `ssh-add --apple-use-keychain ~/.ssh/id_ed25519`
-2. Verify `.env` contains the Ubuntu host and repo path you actually use (defaults work for `192.168.68.71` and `~/projects/deer-vision`).
+2. Verify `.env` contains the Ubuntu host and repo path you actually use (defaults work for `192.168.68.71` and `~/projects/DeerAITrackingResponse`).
 3. From the repo root on the Mac, run:
    - `scripts/deervision_dashboard_tmux.sh`
 
