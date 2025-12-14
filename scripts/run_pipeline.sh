@@ -34,7 +34,7 @@ LOG_DIR="${SHARE_ROOT}/runs/live/logs"
 # Pipeline parameters
 SEGMENT_LENGTH="${SEGMENT_LENGTH:-60}"           # seconds per segment
 RETENTION_HOURS="${RETENTION_HOURS:-72}"         # keep 3 days of segments
-DETECTOR_MODEL="${DETECTOR_MODEL:-models/yolov8n.pt}"
+DETECTOR_MODELS="${DETECTOR_MODELS:-yolov8n.pt,rtdetr-l.pt}"  # multi-model bakeoff
 DETECTOR_CONFIDENCE="${DETECTOR_CONFIDENCE:-0.25}"
 POLL_INTERVAL="${POLL_INTERVAL:-10}"             # seconds between detector checks
 
@@ -93,7 +93,7 @@ start_pipeline() {
     echo "  Camera: ${CAMERA_URL:0:50}..."
     echo "  Segment length: ${SEGMENT_LENGTH}s"
     echo "  Retention: ${RETENTION_HOURS}h"
-    echo "  Detector model: ${DETECTOR_MODEL}"
+    echo "  Detector models: ${DETECTOR_MODELS}"
     echo "  Logs: ${LOG_DIR}/"
 
     # Create tmux session with ingest pane
@@ -120,13 +120,12 @@ start_pipeline() {
     tmux split-window -v -t "${SESSION_NAME}:0"
 
     local detector_cmd="cd '${REPO_ROOT}' && source '${VENV_PATH}/bin/activate' && sleep 15 && while true; do
-        echo '[\$(date)] Starting detector...' | tee -a '${LOG_DIR}/detector.log'
-        python scripts/live_megadetector.py \\
+        echo '[\$(date)] Starting multi-model detector...' | tee -a '${LOG_DIR}/detector.log'
+        python scripts/live_detector_multimodel.py \\
+            --models '${DETECTOR_MODELS}' \\
             --segments-dir '${SHARE_ROOT}/runs/live/analysis' \\
             --detections-dir '${SHARE_ROOT}/runs/live/detections' \\
             --events-dir '${SHARE_ROOT}/runs/live/events' \\
-            --events-log '${LOG_DIR}/events.jsonl' \\
-            --model-path '${DETECTOR_MODEL}' \\
             --event-threshold ${DETECTOR_CONFIDENCE} \\
             --poll-interval ${POLL_INTERVAL} \\
             --log-file '${LOG_DIR}/detector.log' \\

@@ -132,13 +132,22 @@ def augment_with_event_meta(share_root: Path, entry: ClipEntry) -> None:
     except json.JSONDecodeError:
         return
 
+    # Support both old format (max_confidence at root) and new multi-model format
     max_conf = meta.get("max_confidence")
     if isinstance(max_conf, (int, float)):
         entry.max_conf = float(max_conf)
 
-    # Keep detector-derived labels in meta.json only; `entry.tags` are reserved
-    # for human-applied semantics managed via the UI.
-    entry.detector_model = entry.detector_model or "mdv5_ultralytics"
+    # New multi-model format: check models dict for max confidence
+    models_data = meta.get("models", {})
+    if models_data:
+        for model_name, model_result in models_data.items():
+            model_max = model_result.get("max_confidence", 0.0)
+            if model_max and (entry.max_conf is None or model_max > entry.max_conf):
+                entry.max_conf = float(model_max)
+        # Store which model triggered promotion
+        entry.detector_model = meta.get("promoted_by", "multi-model")
+    else:
+        entry.detector_model = entry.detector_model or "mdv5_ultralytics"
 
 
 def build_index(
@@ -340,7 +349,43 @@ def main() -> None:
 
         with st.expander("Event metadata", expanded=False):
             if meta_path.exists():
-                st.json(json.loads(meta_path.read_text()))
+                meta_data = json.loads(meta_path.read_text())
+
+                # Show model comparison if multi-model format
+                models_data = meta_data.get("models", {})
+                if models_data and len(models_data) > 1:
+                    st.markdown("### Model Comparison")
+
+                    # Build comparison table
+                    comparison_rows = []
+                    for model_name, model_result in models_data.items():
+                        comparison_rows.append({
+                            "Model": model_name,
+                            "Max Conf": f"{model_result.get('max_confidence', 0):.3f}",
+                            "Detections": sum(model_result.get("counts", {}).values()),
+                            "Time (ms)": f"{model_result.get('inference_ms', 0):.0f}",
+                            "Animals": model_result.get("counts", {}).get("animal", 0),
+                            "Persons": model_result.get("counts", {}).get("person", 0),
+                        })
+
+                    st.table(comparison_rows)
+
+                    promoted_by = meta_data.get("promoted_by", "unknown")
+                    st.caption(f"Event promoted by: **{promoted_by}**")
+
+                    # Model-specific details
+                    model_tabs = st.tabs(list(models_data.keys()))
+                    for tab, (model_name, model_result) in zip(model_tabs, models_data.items()):
+                        with tab:
+                            hits = model_result.get("hits", [])
+                            if hits:
+                                st.markdown(f"**Top detections ({len(hits)}):**")
+                                for hit in hits[:5]:
+                                    st.text(f"  {hit.get('frame')}: {hit.get('category')} @ {hit.get('confidence', 0):.3f}")
+                            else:
+                                st.text("No detections above threshold")
+
+                st.json(meta_data)
             else:
                 st.write("No meta.json found for this clip.")
 
