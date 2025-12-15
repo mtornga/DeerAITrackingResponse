@@ -24,6 +24,19 @@ from typing import Any, Dict, Iterable, List, Optional
 import cv2
 import torch
 
+# Import routing module (if available)
+try:
+    from detection_router import (
+        RouteDecision,
+        RoutingConfig,
+        RoutingResult,
+        PseudoLabelStore,
+        route_detection,
+    )
+    ROUTING_AVAILABLE = True
+except ImportError:
+    ROUTING_AVAILABLE = False
+
 
 def _ensure_repo_root_on_path() -> Path:
     script_path = Path(__file__).resolve()
@@ -192,6 +205,23 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Device to run inference on (default: auto)",
     )
+    parser.add_argument(
+        "--enable-routing",
+        action="store_true",
+        help="Enable confidence-based routing for autonomous improvement",
+    )
+    parser.add_argument(
+        "--pseudo-label-dir",
+        type=Path,
+        default=None,
+        help="Directory for pseudo-label storage (default: <events_dir>/../pseudo_labels)",
+    )
+    parser.add_argument(
+        "--auto-accept-threshold",
+        type=float,
+        default=0.85,
+        help="Minimum confidence for auto-accept (default: 0.85)",
+    )
     return parser.parse_args()
 
 
@@ -357,7 +387,8 @@ def promote_event(
     events_root: Path,
     model_results: Dict[str, ModelResult],
     promoted_by: str,
-) -> None:
+    routing_result: Optional[Any] = None,
+) -> Path:
     """Promote a segment to the events directory with multi-model results."""
     relative = segment_path.relative_to(segments_root)
     event_dir = events_root / relative.parent / segment_path.stem
@@ -388,17 +419,28 @@ def promote_event(
     meta["max_confidence"] = max_conf_overall
     meta["counts"] = all_counts
 
+    # Add routing decision if available
+    if routing_result is not None and hasattr(routing_result, "to_dict"):
+        meta["routing"] = routing_result.to_dict()
+
     # Write meta.json
     meta_path = event_dir / "meta.json"
     meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
-    logging.info(f"Promoted {relative} (by {promoted_by}, max_conf={max_conf_overall:.3f})")
+    routing_info = ""
+    if routing_result is not None:
+        routing_info = f", route={routing_result.decision.value}"
+    logging.info(f"Promoted {relative} (by {promoted_by}, max_conf={max_conf_overall:.3f}{routing_info})")
+
+    return event_dir
 
 
 def process_segment(
     args: argparse.Namespace,
     models: List[ModelConfig],
     segment_path: Path,
+    pseudo_store: Optional[Any] = None,
+    routing_config: Optional[Any] = None,
 ) -> None:
     """Process a segment with all models."""
     relative = segment_path.relative_to(args.segments_dir)
@@ -437,15 +479,33 @@ def process_segment(
             f"max_conf={result.max_confidence:.3f}, time={result.inference_time_ms:.0f}ms"
         )
 
+    # Run routing if enabled
+    routing_result = None
+    if ROUTING_AVAILABLE and args.enable_routing and model_results:
+        model_dicts = {name: result.to_dict() for name, result in model_results.items()}
+        routing_result = route_detection(model_dicts, routing_config)
+        logging.info(f"  Routing: {routing_result.decision.value} ({routing_result.reason})")
+
     # Promote if any model found something interesting
     if promoted_by:
-        promote_event(
+        event_dir = promote_event(
             segment_path,
             args.segments_dir,
             args.events_dir,
             model_results,
             promoted_by,
+            routing_result,
         )
+
+        # Add to pseudo-label store if auto-accepted
+        if (
+            ROUTING_AVAILABLE
+            and pseudo_store is not None
+            and routing_result is not None
+            and routing_result.decision == RouteDecision.AUTO_ACCEPT
+        ):
+            model_dicts = {name: result.to_dict() for name, result in model_results.items()}
+            pseudo_store.add_clip(str(relative), routing_result, model_dicts)
     else:
         # Still save results for analysis (in detections dir, not events)
         det_dir = args.detections_dir / relative.parent / segment_path.stem
@@ -456,6 +516,11 @@ def process_segment(
             "promoted": False,
             "models": {name: result.to_dict() for name, result in model_results.items()},
         }
+
+        # Add routing info even for non-promoted segments
+        if routing_result is not None:
+            meta["routing"] = routing_result.to_dict()
+
         (det_dir / "meta.json").write_text(json.dumps(meta, indent=2))
 
         max_conf = max(r.max_confidence for r in model_results.values())
@@ -478,6 +543,31 @@ def main() -> int:
         logging.error("No models loaded, exiting")
         return 1
 
+    # Set up routing if enabled
+    pseudo_store = None
+    routing_config = None
+    if args.enable_routing:
+        if not ROUTING_AVAILABLE:
+            logging.warning("Routing requested but detection_router module not found")
+        else:
+            # Set up routing config
+            routing_config = RoutingConfig(
+                min_models_agree=2,
+                min_agreement_confidence=args.auto_accept_threshold,
+            )
+
+            # Set up pseudo-label store
+            if args.pseudo_label_dir:
+                pseudo_label_dir = args.pseudo_label_dir
+            else:
+                pseudo_label_dir = args.events_dir.parent / "pseudo_labels"
+
+            pseudo_label_dir.mkdir(parents=True, exist_ok=True)
+            pseudo_store = PseudoLabelStore(pseudo_label_dir)
+
+            logging.info(f"Routing enabled: auto-accept threshold={args.auto_accept_threshold}")
+            logging.info(f"Pseudo-label store: {pseudo_label_dir}")
+
     logging.info(f"Watching {args.segments_dir} for segments (min age {args.min_segment_age}s)")
     logging.info(f"Models: {[m.name for m in models]}")
     logging.info(f"Event threshold: {args.event_threshold}")
@@ -494,7 +584,7 @@ def main() -> int:
                 if meta_path.exists():
                     continue
 
-                process_segment(args, models, segment_path)
+                process_segment(args, models, segment_path, pseudo_store, routing_config)
                 work_done = True
 
             if not work_done:
@@ -502,6 +592,9 @@ def main() -> int:
 
     except KeyboardInterrupt:
         logging.info("Stopping on keyboard interrupt")
+        if pseudo_store:
+            stats = pseudo_store.get_stats()
+            logging.info(f"Pseudo-label stats: {stats}")
 
     return 0
 
