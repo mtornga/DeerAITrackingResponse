@@ -30,6 +30,11 @@ class ClipEntry:
     max_conf: Optional[float] = None
     tags: List[str] = None
     notes: str = ""
+    # Routing info for autonomous improvement
+    routing_decision: Optional[str] = None  # auto_accept, review, auto_reject, novel
+    routing_confidence: Optional[float] = None
+    routing_agreement: Optional[float] = None
+    routing_reason: Optional[str] = None
 
 
 def _now_iso() -> str:
@@ -149,6 +154,14 @@ def augment_with_event_meta(share_root: Path, entry: ClipEntry) -> None:
     else:
         entry.detector_model = entry.detector_model or "mdv5_ultralytics"
 
+    # Load routing decision info
+    routing_data = meta.get("routing", {})
+    if routing_data:
+        entry.routing_decision = routing_data.get("decision")
+        entry.routing_confidence = routing_data.get("confidence_score")
+        entry.routing_agreement = routing_data.get("agreement_score")
+        entry.routing_reason = routing_data.get("reason")
+
 
 def build_index(
     share_root: Path, segments_root: Path, index_path: Path
@@ -232,6 +245,12 @@ def main() -> None:
     min_conf = st.sidebar.slider(
         "Minimum max confidence", min_value=0.0, max_value=1.0, value=0.3, step=0.05
     )
+    routing_filter = st.sidebar.selectbox(
+        "Routing decision",
+        options=["all", "auto_accept", "review", "auto_reject", "novel", "no_routing"],
+        index=0,
+        help="Filter by autonomous routing decision (requires routing-enabled detector)",
+    )
     limit = st.sidebar.number_input("Max clips to show", min_value=1, max_value=200, value=40)
 
     clips, tag_vocabulary = build_index(share_root, segments_root, index_path)
@@ -260,13 +279,21 @@ def main() -> None:
             continue
         if min_conf > 0.0 and (entry.max_conf is None or entry.max_conf < min_conf):
             continue
+        if routing_filter != "all":
+            if routing_filter == "no_routing":
+                if entry.routing_decision is not None:
+                    continue
+            else:
+                if entry.routing_decision != routing_filter:
+                    continue
         filtered.append(entry)
 
     filtered.sort(key=lambda e: e.capture_mtime, reverse=True)
 
+    routing_str = f", routing={routing_filter}" if routing_filter != "all" else ""
     st.caption(
         f"{len(clips)} clip(s) tracked; showing {min(len(filtered), limit)} "
-        f"with status={status}, events_only={events_only}, min_conf>={min_conf:.2f}"
+        f"with status={status}, events_only={events_only}, min_conf>={min_conf:.2f}{routing_str}"
     )
 
     if not filtered:
@@ -372,6 +399,30 @@ def main() -> None:
 
                     promoted_by = meta_data.get("promoted_by", "unknown")
                     st.caption(f"Event promoted by: **{promoted_by}**")
+
+                    # Show routing decision
+                    routing_data = meta_data.get("routing", {})
+                    if routing_data:
+                        decision = routing_data.get("decision", "unknown")
+                        confidence = routing_data.get("confidence_score", 0)
+                        agreement = routing_data.get("agreement_score", 0)
+                        reason = routing_data.get("reason", "")
+
+                        # Color code the decision
+                        decision_colors = {
+                            "auto_accept": "🟢",
+                            "review": "🟡",
+                            "auto_reject": "🔴",
+                            "novel": "🔵",
+                        }
+                        icon = decision_colors.get(decision, "⚪")
+
+                        st.markdown("### Autonomous Routing")
+                        cols = st.columns(3)
+                        cols[0].metric("Decision", f"{icon} {decision.replace('_', ' ').title()}")
+                        cols[1].metric("Confidence", f"{confidence:.2%}")
+                        cols[2].metric("Agreement", f"{agreement:.2%}")
+                        st.caption(f"**Reason:** {reason}")
 
                     # Model-specific details
                     model_tabs = st.tabs(list(models_data.keys()))
