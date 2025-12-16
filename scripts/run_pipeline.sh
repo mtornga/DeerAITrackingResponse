@@ -34,9 +34,12 @@ LOG_DIR="${SHARE_ROOT}/runs/live/logs"
 # Pipeline parameters
 SEGMENT_LENGTH="${SEGMENT_LENGTH:-60}"           # seconds per segment
 RETENTION_HOURS="${RETENTION_HOURS:-72}"         # keep 3 days of segments
-DETECTOR_MODELS="${DETECTOR_MODELS:-yolov8n.pt,rtdetr-l.pt}"  # multi-model bakeoff
+DETECTOR_MODELS="${DETECTOR_MODELS:-yolov8n_deer.pt,yolov8s_deer.pt,rtdetr_deer.pt}"  # multi-model bakeoff
 DETECTOR_CONFIDENCE="${DETECTOR_CONFIDENCE:-0.25}"
 POLL_INTERVAL="${POLL_INTERVAL:-10}"             # seconds between detector checks
+ENABLE_ROUTING="${ENABLE_ROUTING:-true}"         # enable autonomous routing
+AUTO_ACCEPT_THRESHOLD="${AUTO_ACCEPT_THRESHOLD:-0.85}"  # min confidence for auto-accept
+DETECTOR_DEVICE="${DETECTOR_DEVICE:-cuda:0}"     # pytorch device (cuda:0 or cpu)
 
 # Camera - default to REOLINK_3
 CAMERA_URL="${REOLINK_3_RTSP:-}"
@@ -53,10 +56,13 @@ Commands:
   logs    - Tail the pipeline logs
 
 Environment variables:
-  SEGMENT_LENGTH     - Seconds per segment (default: 60)
-  RETENTION_HOURS    - Hours to retain segments (default: 72)
-  DETECTOR_MODEL     - Path to YOLO model (default: models/yolov8n.pt)
-  DETECTOR_CONFIDENCE - Min confidence for events (default: 0.25)
+  SEGMENT_LENGTH        - Seconds per segment (default: 60)
+  RETENTION_HOURS       - Hours to retain segments (default: 72)
+  DETECTOR_MODELS       - Comma-separated model paths (default: yolov8n_deer.pt,yolov8s_deer.pt,rtdetr_deer.pt)
+  DETECTOR_CONFIDENCE   - Min confidence for events (default: 0.25)
+  DETECTOR_DEVICE       - PyTorch device (default: cuda:0)
+  ENABLE_ROUTING        - Enable autonomous routing (default: true)
+  AUTO_ACCEPT_THRESHOLD - Min confidence for auto-accept (default: 0.85)
 EOF
     exit 1
 }
@@ -94,6 +100,8 @@ start_pipeline() {
     echo "  Segment length: ${SEGMENT_LENGTH}s"
     echo "  Retention: ${RETENTION_HOURS}h"
     echo "  Detector models: ${DETECTOR_MODELS}"
+    echo "  Device: ${DETECTOR_DEVICE}"
+    echo "  Routing: ${ENABLE_ROUTING} (auto-accept threshold: ${AUTO_ACCEPT_THRESHOLD})"
     echo "  Logs: ${LOG_DIR}/"
 
     # Create tmux session with ingest pane
@@ -119,6 +127,12 @@ start_pipeline() {
     # Split and create Pane 1: Detector (with auto-restart loop)
     tmux split-window -v -t "${SESSION_NAME}:0"
 
+    # Build routing flags
+    local routing_flags=""
+    if [[ "${ENABLE_ROUTING}" == "true" ]]; then
+        routing_flags="--enable-routing --auto-accept-threshold ${AUTO_ACCEPT_THRESHOLD}"
+    fi
+
     local detector_cmd="cd '${REPO_ROOT}' && source '${VENV_PATH}/bin/activate' && sleep 15 && while true; do
         echo '[\$(date)] Starting multi-model detector...' | tee -a '${LOG_DIR}/detector.log'
         python scripts/live_detector_multimodel.py \\
@@ -128,6 +142,8 @@ start_pipeline() {
             --events-dir '${SHARE_ROOT}/runs/live/events' \\
             --event-threshold ${DETECTOR_CONFIDENCE} \\
             --poll-interval ${POLL_INTERVAL} \\
+            --device ${DETECTOR_DEVICE} \\
+            ${routing_flags} \\
             --log-file '${LOG_DIR}/detector.log' \\
             2>&1 | tee -a '${LOG_DIR}/detector.log'
         echo '[\$(date)] Detector exited, restarting in 10s...' | tee -a '${LOG_DIR}/detector.log'
