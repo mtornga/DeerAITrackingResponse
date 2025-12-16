@@ -34,7 +34,7 @@ LOG_DIR="${SHARE_ROOT}/runs/live/logs"
 # Pipeline parameters
 SEGMENT_LENGTH="${SEGMENT_LENGTH:-60}"           # seconds per segment
 RETENTION_HOURS="${RETENTION_HOURS:-72}"         # keep 3 days of segments
-DETECTOR_MODELS="${DETECTOR_MODELS:-yolov8n_deer.pt,yolov8s_deer.pt,rtdetr_deer.pt}"  # multi-model bakeoff
+DETECTOR_MODELS="${DETECTOR_MODELS:-yolov8n.pt,yolov8n_deer.pt,yolov8s_deer.pt,rtdetr_deer.pt}"  # base YOLO (person) + deer models
 DETECTOR_CONFIDENCE="${DETECTOR_CONFIDENCE:-0.25}"
 POLL_INTERVAL="${POLL_INTERVAL:-10}"             # seconds between detector checks
 ENABLE_ROUTING="${ENABLE_ROUTING:-true}"         # enable autonomous routing
