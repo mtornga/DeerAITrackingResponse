@@ -1,327 +1,179 @@
 # Developer Handoff Notes
-**Date**: 2025-12-16
-**Session**: Wildlife Detection Pipeline Deployment
-**Status**: Operational
+**Date**: 2025-12-17
+**Session**: Pipeline Recovery & Test Infrastructure
+**Status**: Ingest Online, Detection Models Need Retraining
 
 ## What Was Accomplished
 
-### 1. Enabled Person Detection (Safety Critical)
-**Problem**: Pipeline only detected deer. Needed person detection for UGV safety and testing.
+### 1. Diagnosed and Fixed Pipeline Outage
+**Problem**: Pipeline was offline - no new clips since morning walk-by.
 
-**Solution**: Added base YOLOv8 model to multi-model pipeline
-- Initially deployed 4-model setup: `yolov8n.pt` (person) + 3 deer-specific models
-- Verified person detection working (157 detections at 78% confidence in test segment)
+**Root Cause**: Disk 100% full (492GB/492GB). RTSP capture was failing with "ffmpeg exit status 228" (no space left on device).
 
-**Files Modified**:
-- `scripts/run_pipeline.sh` - Added `yolov8n.pt` to `DETECTOR_MODELS`
-- Commit: `ae71d8f` - "feat: add base YOLOv8 for person detection"
+**Solution**:
+- Deleted old segments: `/srv/deer-share/runs/live/segments/2025-12-14/` (54GB) and `2025-12-15/` (38GB)
+- Freed 90GB, disk now at 82%
+- Restarted pipeline - capture resumed successfully
 
-### 2. Recovered Lost Training Data
-**Problem**: Current training dataset only had 850 images (22 deer, 41 person labels). Previous session recovered 1000+ hand-labeled CVAT images that weren't being used.
+**Files Modified**: None (operational fix)
 
-**Discovery**: Found 2,411 hand-labeled images in `outdoor/deer-vision/data/raw/cvat_with_images/`
-- Deer: 7,058 labels
-- Person: 302 labels
-- AprilTag: 6,705 labels
+### 2. Created Pipeline Health Check System
+**Problem**: No automated way to verify models are working or detect regressions like AprilTag misclassification.
 
-**Location**: `/home/mtornga/projects/DeerAITrackingResponse/outdoor/deer-vision/data/raw/cvat_with_images/`
+**Solution**: Created test clips infrastructure with ground truth annotations
 
-### 3. Created Unified Wildlife Dataset
-**Action**: Merged all CVAT data into single training dataset
+**New Files**:
+- `test_clips/deer_test.mkv` - Daytime clip with real deer (from 2025-12-14)
+- `test_clips/person_test.mkv` - Nighttime person walk-by (from 2025-12-16)
+- `test_clips/ground_truth.json` - Expected detections and pass/fail criteria
+- `test_clips/README.md` - Documentation
+- `scripts/pipeline_health_check.py` - Automated health check script
 
-**Dataset**: `outdoor/deer-vision/data/datasets/wildlife_merged/`
-- **Total**: 2,411 images
-- **Train**: 2,049 images (85%)
-- **Val**: 362 images (15%)
-- **Classes**:
-  - Deer (class 0): 6,022 labels
-  - Person (class 2): 248 labels
-  - AprilTag (class 3): 5,692 labels
-  - Unknown_animal (class 1): unused
-
-**data.yaml**: `outdoor/deer-vision/data/datasets/wildlife_merged/data.yaml`
-
-### 4. Trained Unified Wildlife Model
-**Model**: `yolov8n_wildlife.pt` - detects both deer AND person in single model
-
-**Training**:
-- Dataset: wildlife_merged (2,411 images)
-- Epochs: 100
-- Image size: 960
-- Batch: 16
-- Device: cuda:0
-- Duration: ~15-20 minutes
-
-**Output**:
-- Model: `outdoor/deer-vision/models/yolov8n_wildlife_full/weights/best.pt`
-- Deployed as: `models/yolov8n_wildlife.pt`
-
-**Note**: RT-DETR training failed (empty weights directory). Only YOLOv8n completed successfully.
-
-### 5. Deployed to Production Pipeline
-**Action**: Replaced 4-model setup with single unified wildlife model
-
-**Configuration** (`scripts/run_pipeline.sh`):
+**Usage**:
 ```bash
-DETECTOR_MODELS="${DETECTOR_MODELS:-yolov8n_wildlife.pt}"
+cd ~/projects/DeerAITrackingResponse
+source .venv/bin/activate
+python scripts/pipeline_health_check.py --verbose
+python scripts/pipeline_health_check.py --verbose --models yolov8n.pt
 ```
 
-**Benefits**:
-- 4x faster inference (~10sec vs ~40sec per segment)
-- Proper multi-class detection (no more "single model" routing confusion)
-- Both deer and person detected by same model
+### 3. Discovered Critical Model Issues
+**Problem**: The v2 wildlife models (deployed Dec 16) are broken.
 
-**Commit**: `1cd889a` - "feat: deploy yolov8n_wildlife model trained on full CVAT dataset"
+**Findings from health check**:
 
-### 6. Fixed Disk Space Issue
-**Problem**: Ubuntu server disk was 100% full, blocking dataset creation
+| Model | deer_test.mkv | person_test.mkv | Status |
+|-------|---------------|-----------------|--------|
+| yolov8n.pt (base COCO) | PASS (deer 0.31) | PASS (person 0.54) | HEALTHY |
+| yolov8n_wildlife.pt | FAIL (AprilTag FPs) | FAIL (no person) | BROKEN |
+| yolov8n_wildlife_v2.pt | FAIL (0 detections) | FAIL (AprilTag FPs) | BROKEN |
+| rtdetr_wildlife_v2.pt | FAIL (0 detections) | FAIL (AprilTag FPs) | BROKEN |
 
-**Solution**: Cleaned up old segments
-- Deleted: `/srv/deer-share/runs/live/remote/2025-12-14` (54GB)
-- Deleted: `/srv/deer-share/runs/live/remote/2025-12-15` (38GB)
-- Deleted: `/srv/deer-share/runs/live/analysis/2025-12-16` (78GB)
-- **Freed**: 77GB (from 100% to 84% usage)
-
-### 7. Documented Target Classes
-**Created**: `docs/target_classes.md`
-
-**Phase 1** (Currently Trained):
-- Deer (primary target)
-- Person (safety critical)
-
-**Future Phases**:
-- Tier 2: raccoon, opossum, skunk, fox, coyote, groundhog
-- Tier 3: squirrel (noisy?), weasel
-- Tier 4: snake, skink, owl, hawk
-- Tier 5: UGV (after deployment)
-
-**Commit**: `c6efb38` - "docs: add target detection classes specification"
+**Root Cause Theory**: The wildlife models were trained on a dataset that included AprilTag labels. The models learned to detect AprilTags as high-confidence "animals", causing:
+1. False positives on every clip (AprilTags at fixed positions)
+2. Missed actual animals (model confused)
 
 ---
 
 ## Current System State
 
 ### Pipeline Status
-- **Running**: Yes
-- **Session**: `deervision-pipeline` (tmux)
-- **Camera**: Reolink 3 (RTSP)
-- **Detector**: `yolov8n_wildlife.pt` (single model)
-- **Routing**: Enabled (auto-accept threshold: 0.85)
-- **Device**: cuda:0
+- **Ingest**: ONLINE - capturing 60s segments
+- **Detection**: RUNNING but models produce 0 useful detections
+- **Disk**: 82% (87GB free)
 
-### Active Model
+### Active Models (BROKEN)
 ```
-Model: yolov8n_wildlife.pt
-Classes: deer (0), person (2), apriltag (3), unknown_animal (1)
-Training: 2,411 images, 6,022 deer + 248 person labels
-Location: ~/projects/DeerAITrackingResponse/models/yolov8n_wildlife.pt
+DETECTOR_MODELS: yolov8n_wildlife_v2.pt,rtdetr_wildlife_v2.pt
 ```
+These models return 0 detections or misclassify AprilTags as animals.
 
-### Monitoring
+### Monitoring Commands
 ```bash
 # Check pipeline status
 ssh mtornga@192.168.68.71 "cd ~/projects/DeerAITrackingResponse && ./scripts/run_pipeline.sh status"
 
-# View live detector logs
-ssh mtornga@192.168.68.71 "tail -f /srv/deer-share/runs/live/logs/detector.log"
-
-# Attach to pipeline tmux
-ssh mtornga@192.168.68.71 "tmux attach -t deervision-pipeline"
+# Run health check
+ssh mtornga@192.168.68.71 "cd ~/projects/DeerAITrackingResponse && source .venv/bin/activate && python scripts/pipeline_health_check.py --verbose"
 
 # Check disk space
 ssh mtornga@192.168.68.71 "df -h /"
 
-# View Streamlit UI
-open http://192.168.68.71:8502/
-```
-
-### Recent Events (Today)
-```
-segment_002934  - Person walk-by test (00:29 UTC)
-segment_003037  - Unknown
-segment_005241  - Unknown
-segment_153037  - Unknown
-segment_153141  - Unknown
+# View detector logs
+ssh mtornga@192.168.68.71 "tail -30 /srv/deer-share/runs/live/logs/detector.log"
 ```
 
 ---
 
-## Known Issues & Limitations
+## Known Issues
 
-### 1. RT-DETR Training Failed
-**Issue**: RT-DETR model training didn't complete successfully
-- `outdoor/deer-vision/models/rtdetr_wildlife_full/weights/` is empty
-- No log file at `logs/train_rtdetr_wildlife_full.log`
+### 1. Wildlife Models Are Broken (CRITICAL)
+**Issue**: Both yolov8n_wildlife_v2.pt and rtdetr_wildlife_v2.pt fail the health check.
 
-**Impact**: Only have YOLOv8n for detection (no second model for voting/agreement)
+**Symptoms**:
+- deer_test.mkv: 0 detections (should detect deer)
+- person_test.mkv: 9 "deer" detections (should be 0 deer, 1 person)
 
-**Next Steps**:
-- Debug RT-DETR training failure
-- Retry with smaller batch size or lower image resolution
-- Or use RT-DETR pre-trained on COCO and fine-tune
+**Impact**: No useful detections being produced. All clips auto-rejected.
 
-### 2. Class Imbalance
-**Issue**: Training data heavily skewed toward deer
-- Deer: 6,022 labels (96%)
-- Person: 248 labels (4%)
+**Fix Required**: Retrain models WITHOUT AprilTag labels in the training dataset.
 
-**Impact**: Model may be less accurate on person detection
+### 2. AprilTag Misclassification History
+**Issue**: Training data included AprilTag annotations, which corrupted model learning.
 
-**Next Steps**:
-- Collect more person walk-by clips
-- Consider augmentation for person class
-- Or source COCO person subset to balance
+**Evidence**: High-confidence (>0.85) "animal" detections at fixed positions matching AprilTag locations:
+- Position ~(0.85, 0.83) - right side of frame
+- Position ~(0.29, 0.65) - center-left
+- Position ~(0.16, 0.45) - left edge
 
-### 3. Small Person Dataset
-**Issue**: Only 248 person labels across 2,411 images
+**Prevention**: Always run health check after retraining. The test clips will catch this regression.
 
-**Impact**: May not generalize well to different people, poses, distances
+### 3. Disk Space Accumulation
+**Issue**: Segments accumulate at ~150GB/day when pipeline is running.
 
-**Next Steps**:
-- User testing: "do many walk-bys to keep momentum going"
-- Extract frames from walk-by events
-- Label in CVAT
-- Retrain with expanded person data
-
-### 4. Routing May Need Tuning
-**Issue**: With single model, routing logic is simplified
-- No model agreement (only 1 model)
-- Auto-accept threshold: 0.85 (may be too high for current model)
-
-**Impact**: Most detections may route to "review" instead of "auto-accept"
-
-**Next Steps**:
-- Monitor routing decisions in logs
-- Adjust `AUTO_ACCEPT_THRESHOLD` if needed
-- Add second model (RT-DETR) for proper multi-model voting
-
-### 5. Disk Space Management
-**Issue**: Video segments accumulate quickly
-- Analysis folder: 78GB in 24 hours
-- Remote folder: 168GB over 3 days
-
-**Impact**: Disk fills up, blocks training
-
-**Next Steps**:
-- Implement retention policy (keep last 72 hours only)
+**Mitigation Needed**:
+- Implement retention policy (72h max)
 - Add cron job to clean old segments
-- Or increase disk size / add external storage
+- Consider external storage
 
 ---
 
 ## Next Steps (Priority Order)
 
-### Immediate (User Testing)
-1. **Walk-by testing**: User will perform multiple walk-bys to test person detection
-2. **Verify Streamlit**: Check events show up with correct `person` class labels
-3. **Monitor confidence**: Watch detection confidence scores in logs
-4. **Check routing**: Verify if detections are "auto-accept", "review", or "auto-reject"
+### Immediate (Model Fix)
+1. **Switch to working model**: Edit `run_pipeline.sh` to use `yolov8n.pt` temporarily
+   ```bash
+   DETECTOR_MODELS="${DETECTOR_MODELS:-yolov8n.pt}"
+   ```
+2. **Retrain wildlife models** WITHOUT AprilTag labels:
+   - Remove AprilTag class from dataset
+   - Retrain yolov8n and rtdetr
+   - Run health check to verify
 
-### Short-term (Model Improvement)
-1. **Fix RT-DETR training**: Debug and retrain for multi-model voting
-2. **Collect person data**: Extract frames from walk-by events, label, retrain
-3. **Tune routing thresholds**: Adjust auto-accept threshold based on observed confidence distribution
-4. **Add eval metrics**: Track mAP, precision, recall over time
+### Short-term (Quality)
+1. **Add more test clips** when CVAT is back online
+2. **Tune confidence thresholds** based on health check results
+3. **Add disk space monitoring** to prevent future outages
 
-### Medium-term (Feature Expansion)
-1. **Add nocturnal wildlife classes**: raccoon, opossum, skunk (Tier 2)
-2. **Night vision training**: Collect IR camera data, test model performance
-3. **Deploy UGV**: Bring CuteBot outdoors, collect training data for self-recognition
-4. **Implement deterrent routing**: Connect detections → UGV path planning
-
-### Long-term (System Scaling)
-1. **Automated retraining pipeline**: Feedback loop from Streamlit → CVAT → Training
-2. **Multi-camera support**: Expand to 4-5 Reolink cameras covering full property
-3. **Trajectory forecasting**: Predict animal paths for proactive deterrence
-4. **Cloud deployment**: Consider edge TPU or cloud inference for scaling
+### Medium-term (Automation)
+1. **Cron job for health checks** - daily smoke test
+2. **Disk retention policy** - auto-delete segments older than 72h
+3. **Alert on health check failures**
 
 ---
 
 ## Code Structure Reference
 
-### Key Scripts
+### New Files This Session
 ```
+test_clips/
+├── deer_test.mkv           # Deer test clip (137MB)
+├── person_test.mkv         # Person test clip (137MB)
+├── deer_test_frame.jpg     # Reference frame
+├── person_test_frame.jpg   # Reference frame
+├── ground_truth.json       # Expected results
+└── README.md               # Documentation
+
 scripts/
-├── run_pipeline.sh              # Main pipeline orchestration (tmux)
-├── live_detector_multimodel.py  # Multi-model detector with routing
-├── detection_router.py          # Routing logic (auto-accept/review/reject)
-├── daily_review_app.py          # Streamlit UI for event review
-├── train.py                     # YOLO training wrapper (outdoor/deer-vision/)
-├── feedback_cycle.py            # Autonomous retraining loop
-└── backfill_routing.py          # Retrospective routing analysis
+└── pipeline_health_check.py  # Health check script
 ```
 
-### Key Configs
+### Key Paths
 ```
-.env                             # RTSP URLs, AWS creds, server hosts
-scripts/run_pipeline.sh          # DETECTOR_MODELS, thresholds, intervals
-outdoor/deer-vision/configs/
-├── data_wildlife.yaml           # Dataset config (path, classes)
-├── hyp_det.yaml                 # YOLO hyperparameters
-└── eval_thresholds.yaml         # Quality gate thresholds
-```
-
-### Data Locations (Ubuntu Server)
-```
-/srv/deer-share/runs/live/
-├── segments/              # Raw RTSP captures (60sec mkv files)
-├── analysis/              # Copies for detector processing
-├── detections/            # Detector output JSONs
-├── events/                # Promoted events (segment + meta.json)
-├── pseudo_labels/         # Auto-accepted clips for training
-└── logs/                  # Pipeline logs
-
-~/projects/DeerAITrackingResponse/outdoor/deer-vision/
-├── data/
-│   ├── raw/cvat_with_images/      # 2,411 hand-labeled CVAT images
-│   └── datasets/wildlife_merged/  # Current training dataset
-└── models/
-    ├── yolov8n_wildlife_full/     # Training output
-    └── (older model versions)
-
+# Models
 ~/projects/DeerAITrackingResponse/models/
-└── yolov8n_wildlife.pt            # Deployed production model
-```
+├── yolov8n.pt              # Base COCO - WORKING
+├── yolov8n_wildlife.pt     # Dec 16 - BROKEN
+├── yolov8n_wildlife_v2.pt  # Dec 16 - BROKEN
+└── rtdetr_wildlife_v2.pt   # Dec 16 - BROKEN
 
----
-
-## Testing & Validation
-
-### Walk-by Test Protocol
-1. **Walk by camera** at various distances (near, medium, far)
-2. **Wait 2 minutes** for segment capture + detection processing
-3. **Check events**: `ls /srv/deer-share/runs/live/events/$(date +%Y-%m-%d)/`
-4. **Verify in Streamlit**: Event should show with `person` class
-5. **Check confidence**: Look for 60-80% confidence (adjust threshold if lower)
-
-### Expected Results
-- **Detection**: Person detected with confidence 0.6-0.8
-- **Routing**: "review" (since single model, no agreement calculation)
-- **Event promotion**: Segment copied to events folder with meta.json
-- **Streamlit**: Shows in daily review UI with person label
-
-### Debug Commands
-```bash
-# Check if segment was captured
-ssh mtornga@192.168.68.71 "ls -lht /srv/deer-share/runs/live/segments/$(date +%Y-%m-%d)/ | head -5"
-
-# Check if segment was promoted
-ssh mtornga@192.168.68.71 "ls -lht /srv/deer-share/runs/live/events/$(date +%Y-%m-%d)/"
-
-# Check detector logs for processing
-ssh mtornga@192.168.68.71 "grep 'yolov8n_wildlife' /srv/deer-share/runs/live/logs/detector.log | tail -20"
-
-# Check GPU usage
-ssh mtornga@192.168.68.71 "nvidia-smi"
-
-# Manual inference test on specific segment
-ssh mtornga@192.168.68.71 "cd ~/projects/DeerAITrackingResponse && source .venv/bin/activate && python -c \"
-from ultralytics import YOLO
-model = YOLO('models/yolov8n_wildlife.pt')
-results = model('/srv/deer-share/runs/live/segments/2025-12-16/segment_HHMMSS.mkv')
-for r in results:
-    print(r.boxes.data)
-\""
+# Live pipeline data
+/srv/deer-share/runs/live/
+├── segments/     # Raw captures (~150GB/day)
+├── analysis/     # Copies for detector
+├── detections/   # Detector JSON output
+├── events/       # Promoted events
+└── logs/         # Pipeline logs
 ```
 
 ---
@@ -331,120 +183,31 @@ for r in results:
 ### Ubuntu Server
 - **Host**: `192.168.68.71`
 - **User**: `mtornga`
-- **SSH**: `ssh mtornga@192.168.68.71` (key-based auth)
 - **Repo**: `~/projects/DeerAITrackingResponse`
-- **Venv**: `.venv` (in repo root)
+- **Venv**: `.venv`
 
 ### Services
 - **CVAT**: `http://192.168.68.71:8080/` (mtornga / TKE4life)
 - **Streamlit**: `http://192.168.68.71:8502/`
-- **Samba**: `//mtornga@192.168.68.71/deer-share` (mtornga / mtornga)
-
-### Git
-- **Repo**: `https://github.com/mtornga/DeerAITrackingResponse.git`
-- **Branch**: `main`
-- **Recent commits**:
-  - `1cd889a` - Deploy yolov8n_wildlife model
-  - `c6efb38` - Add target classes doc
-  - `ae71d8f` - Add base YOLO for person detection
-  - `6ca9117` - Enable autonomous routing
-
----
-
-## Resources & Documentation
-
-### Internal Docs
-- `CLAUDE.md` - Project overview, setup instructions
-- `docs/target_classes.md` - Full taxonomy of detection classes
-- `docs/autonomous_improvement_design.md` - Routing system architecture
-- `outdoor/deer-vision/README.md` - Training pipeline guide
-
-### External References
-- [GUARD Paper (UMN)](https://example.com) - Wildlife deterrent research (inspiration)
-- [MegaDetector](https://github.com/microsoft/CameraTraps) - Wildlife detection baseline
-- [Ultralytics YOLOv8](https://docs.ultralytics.com) - Training framework
-- [RT-DETR](https://github.com/lyuwenyu/RT-DETR) - Alternative detector
-
-### Model Zoo
-- `models/yolov8n_wildlife.pt` - Current production (2,411 images)
-- `models/yolov8n.pt` - Base COCO (80 classes)
-- `models/md_v5a.0.0.pt` - MegaDetector v5
-- `models/*_deer.pt` - Legacy deer-only models (deprecated)
-
----
-
-## Troubleshooting
-
-### Pipeline Not Running
-```bash
-ssh mtornga@192.168.68.71 "cd ~/projects/DeerAITrackingResponse && ./scripts/run_pipeline.sh status"
-# If stopped:
-ssh mtornga@192.168.68.71 "cd ~/projects/DeerAITrackingResponse && ./scripts/run_pipeline.sh start"
-```
-
-### Detector Stuck / Not Processing
-```bash
-# Check if detector is running
-ssh mtornga@192.168.68.71 "ps aux | grep live_detector_multimodel"
-
-# Restart pipeline
-ssh mtornga@192.168.68.71 "cd ~/projects/DeerAITrackingResponse && ./scripts/run_pipeline.sh stop && sleep 2 && ./scripts/run_pipeline.sh start"
-```
-
-### Disk Full
-```bash
-# Check space
-ssh mtornga@192.168.68.71 "df -h /"
-
-# Clean old segments (careful!)
-ssh mtornga@192.168.68.71 "find /srv/deer-share/runs/live/analysis/ -mtime +3 -delete"
-```
-
-### Model Not Found
-```bash
-# Verify model exists
-ssh mtornga@192.168.68.71 "ls -la ~/projects/DeerAITrackingResponse/models/yolov8n_wildlife.pt"
-
-# Copy from training output if missing
-ssh mtornga@192.168.68.71 "cp ~/projects/DeerAITrackingResponse/outdoor/deer-vision/models/yolov8n_wildlife_full/weights/best.pt ~/projects/DeerAITrackingResponse/models/yolov8n_wildlife.pt"
-```
-
-### CVAT Data Missing
-**Location**: `~/projects/DeerAITrackingResponse/outdoor/deer-vision/data/raw/cvat_with_images/`
-- 2,411 images in `images/`
-- 2,411 labels in `labels/`
-- `extraction_summary.json` has metadata
-
-If missing, check:
-- `cvat_rescued/` - Original CVAT exports
-- `cvat_with_images/` - Processed and paired
-
----
-
-## Contact & Handoff
-
-**User**: Mark (mtornga@gmail.com)
-**System**: Wildlife management + UGV deterrent platform
-**Goal**: Autonomous 24/7 deer detection and routing for property protection
-
-**Current Focus**: Testing person detection accuracy through walk-by validation
-
-**Blockers**: None - system operational
-
-**Questions**: Reach out via GitHub issues or direct contact
 
 ---
 
 ## Session Summary
 
-✅ **Person detection enabled** - Safety critical for UGV operation
-✅ **Recovered 2,411 CVAT images** - 10x more training data than before
-✅ **Trained unified wildlife model** - Deer + Person in single detector
-✅ **Deployed to production** - Pipeline operational with new model
-✅ **Documented target classes** - Roadmap for future wildlife expansion
-✅ **Freed 77GB disk space** - Unblocked future training
+| Task | Status |
+|------|--------|
+| Diagnose pipeline outage | DONE - disk full |
+| Free disk space | DONE - 90GB freed |
+| Create test clips | DONE - deer + person |
+| Create health check script | DONE |
+| Identify model issues | DONE - AprilTag misclass |
+| Fix models | NOT DONE - needs retraining |
 
-**Next**: User walk-by testing to validate person detection accuracy
+**Critical Finding**: The v2 wildlife models are broken and need retraining without AprilTag labels. Use `yolov8n.pt` as temporary fallback.
 
-🤖 **Generated**: 2025-12-16 by Claude Code
-📝 **Handoff to**: Next development session
+**New Capability**: Run `python scripts/pipeline_health_check.py --verbose` to verify pipeline health at any time.
+
+---
+
+**Generated**: 2025-12-17 by Claude Code
+**Handoff to**: Next development session

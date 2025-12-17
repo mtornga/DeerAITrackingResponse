@@ -1,0 +1,84 @@
+{
+  "version": "1.0",
+  "created": "2025-12-17",
+  "description": "Ground truth annotations for pipeline health check test clips",
+  "clips": {
+    "deer_test.mkv": {
+      "source": "/srv/deer-share/runs/live/events/2025-12-14/segment_215631/segment_215631.mkv",
+      "recorded": "2025-12-14T21:56:31Z",
+      "description": "Daytime deer in backyard, deer visible in center of frame near treeline",
+      "expected_detections": {
+        "deer": {
+          "count": 1,
+          "min_confidence": 0.7,
+          "notes": "Single deer standing in center of yard, should be detected across multiple frames"
+        },
+        "person": {
+          "count": 0,
+          "notes": "No actual person in clip. Previous detections at (0.128, 0.17) were likely AprilTag misclassification"
+        },
+        "apriltag": {
+          "count": 1,
+          "notes": "AprilTag visible on deck structure on left side of frame"
+        }
+      },
+      "reference_frame": {
+        "frame_number": 165,
+        "deer_bbox_normalized": {
+          "x_center": 0.53,
+          "y_center": 0.24,
+          "width": 0.04,
+          "height": 0.10,
+          "notes": "Approximate center of deer in frame 165"
+        }
+      },
+      "quality_criteria": {
+        "must_detect_deer": true,
+        "must_not_detect_person": true,
+        "deer_confidence_min": 0.25,
+        "max_false_positives": 2
+      }
+    },
+    "person_test.mkv": {
+      "source": "/srv/deer-share/runs/live/events/2025-12-16/segment_003037/segment_003037.mkv",
+      "recorded": "2025-12-16T00:30:37Z",
+      "description": "Nighttime person walk-by test, person visible in center of yard",
+      "expected_detections": {
+        "person": {
+          "count": 1,
+          "min_confidence": 0.4,
+          "notes": "Person walking through yard, detected in multiple frames"
+        },
+        "deer": {
+          "count": 0,
+          "notes": "No deer in this clip"
+        },
+        "apriltag": {
+          "count": 1,
+          "notes": "AprilTag visible at bottom right of frame"
+        }
+      },
+      "reference_frame": {
+        "frame_number": 15,
+        "person_bbox_normalized": {
+          "x_center": 0.44,
+          "y_center": 0.29,
+          "width": 0.04,
+          "height": 0.33,
+          "notes": "Approximate center of person in frame 15"
+        }
+      },
+      "quality_criteria": {
+        "must_detect_person": true,
+        "must_not_detect_deer": true,
+        "person_confidence_min": 0.4,
+        "max_false_positives": 2
+      }
+    }
+  },
+  "pass_criteria": {
+    "description": "Both clips must pass their quality criteria for the pipeline to be considered healthy",
+    "all_clips_must_pass": true,
+    "apriltag_as_animal_is_failure": true
+  }
+}

@@ -23,6 +23,38 @@ Automated coverage is light; add `pytest` modules under a new `tests/` folder wh
 ## Commit & Pull Request Guidelines
 Git history favors concise, present-tense subjects (e.g., `iterations on cutebot movement`, `chore: ignore .DS_Store`). Keep each commit scoped to one behavior or dataset tweak, and mention calibration data sources when they change. Pull requests should link issues, summarize testing commands, and attach screenshots or short clips whenever output imagery shifts. Call out any new S3 paths or credentials needed so operators can refresh the deployment docs.
 
+## Pipeline Health Check
+
+When asked "Is the pipeline operational?" run:
+
+```bash
+ssh mtornga@192.168.68.71 "cd ~/projects/DeerAITrackingResponse && source .venv/bin/activate && python scripts/pipeline_health_check.py --verbose"
+```
+
+**Interpret output**:
+- `HEALTHY: All 2 test clips passed` = Pipeline working correctly
+- `UNHEALTHY: ...` = Pipeline has issues, read error details
+
+**If unhealthy**, also check:
+```bash
+# Pipeline process status
+ssh mtornga@192.168.68.71 "cd ~/projects/DeerAITrackingResponse && ./scripts/run_pipeline.sh status"
+
+# Disk space (common failure cause)
+ssh mtornga@192.168.68.71 "df -h /"
+
+# Recent detector logs
+ssh mtornga@192.168.68.71 "tail -30 /srv/deer-share/runs/live/logs/detector.log"
+```
+
+**Test specific models**:
+```bash
+python scripts/pipeline_health_check.py --verbose --models yolov8n.pt
+python scripts/pipeline_health_check.py --verbose --models yolov8n_wildlife.pt,rtdetr_wildlife.pt
+```
+
+**After model retraining**: Always run health check to catch regressions like AprilTag misclassification.
+
 ## Additional
 Always use context7 when I need code generation, setup or configuration steps, or
 library/API documentation. This means you should automatically use the Context7 MCP

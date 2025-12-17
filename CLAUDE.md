@@ -144,6 +144,32 @@ scripts/deervision_dashboard_tmux.sh
 
 Spawns 4-pane layout: Mac status, Ubuntu status, CPU/GPU monitor, log tail.
 
+### Pipeline Health Check
+
+When asked "Is the pipeline operational?" run this health check:
+
+```bash
+# On Ubuntu server
+ssh mtornga@192.168.68.71 "cd ~/projects/DeerAITrackingResponse && source .venv/bin/activate && python scripts/pipeline_health_check.py --verbose"
+
+# Test specific models
+python scripts/pipeline_health_check.py --verbose --models yolov8n.pt
+python scripts/pipeline_health_check.py --verbose --models yolov8n_wildlife.pt,rtdetr_wildlife.pt
+```
+
+The health check:
+1. Verifies test clips exist (`test_clips/deer_test.mkv`, `test_clips/person_test.mkv`)
+2. Runs detection models on both clips
+3. Validates results against ground truth (`test_clips/ground_truth.json`)
+4. Reports HEALTHY or UNHEALTHY with specific failures
+
+**Exit codes**: 0 = healthy, 1 = unhealthy
+
+**Common failures**:
+- AprilTag misclassification (high-confidence "animal" at fixed positions)
+- Missing detections (model not detecting actual deer/person)
+- Disk full (check with `df -h /`)
+
 ## High-Level Architecture
 
 ### Spatial Intelligence Pipeline
