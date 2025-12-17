@@ -1,7 +1,7 @@
 # Developer Handoff Notes
 **Date**: 2025-12-17
 **Session**: Pipeline Recovery & Test Infrastructure
-**Status**: Ingest Online, Detection Models Need Retraining
+**Status**: Ingest Online, Detection Using Base `yolov8n`, Wildlife Models Need Retraining
 
 ## What Was Accomplished
 
@@ -59,14 +59,15 @@ python scripts/pipeline_health_check.py --verbose --models yolov8n.pt
 
 ### Pipeline Status
 - **Ingest**: ONLINE - capturing 60s segments
-- **Detection**: RUNNING but models produce 0 useful detections
+- **Detection**: RUNNING with base `yolov8n.pt` (healthy on test clips)
 - **Disk**: 82% (87GB free)
 
-### Active Models (BROKEN)
+### Active Models
 ```
-DETECTOR_MODELS: yolov8n_wildlife_v2.pt,rtdetr_wildlife_v2.pt
+DETECTOR_MODELS: yolov8n.pt
 ```
-These models return 0 detections or misclassify AprilTags as animals.
+- Base COCO model passes health check for deer/person.
+- Wildlife v2 models remain BROKEN (kept out of rotation until retrained).
 
 ### Monitoring Commands
 ```bash
@@ -88,13 +89,9 @@ ssh mtornga@192.168.68.71 "tail -30 /srv/deer-share/runs/live/logs/detector.log"
 ## Known Issues
 
 ### 1. Wildlife Models Are Broken (CRITICAL)
-**Issue**: Both yolov8n_wildlife_v2.pt and rtdetr_wildlife_v2.pt fail the health check.
+**Issue**: Both yolov8n_wildlife_v2.pt and rtdetr_wildlife_v2.pt fail the health check (0 detections on deer, AprilTag FPs on person).
 
-**Symptoms**:
-- deer_test.mkv: 0 detections (should detect deer)
-- person_test.mkv: 9 "deer" detections (should be 0 deer, 1 person)
-
-**Impact**: No useful detections being produced. All clips auto-rejected.
+**Impact**: Removed from pipeline; base `yolov8n.pt` temporarily in use.
 
 **Fix Required**: Retrain models WITHOUT AprilTag labels in the training dataset.
 
@@ -121,10 +118,7 @@ ssh mtornga@192.168.68.71 "tail -30 /srv/deer-share/runs/live/logs/detector.log"
 ## Next Steps (Priority Order)
 
 ### Immediate (Model Fix)
-1. **Switch to working model**: Edit `run_pipeline.sh` to use `yolov8n.pt` temporarily
-   ```bash
-   DETECTOR_MODELS="${DETECTOR_MODELS:-yolov8n.pt}"
-   ```
+1. **Switch to working model**: DONE. `run_pipeline.sh` default is now `yolov8n.pt` and pipeline restarted with this model.
 2. **Retrain wildlife models** WITHOUT AprilTag labels:
    - Remove AprilTag class from dataset
    - Retrain yolov8n and rtdetr
