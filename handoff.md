@@ -1,138 +1,150 @@
 # Developer Handoff Notes
-**Date**: 2025-12-17
-**Session**: Pipeline Recovery & Test Infrastructure
-**Status**: Ingest Online, Detection Using Base `yolov8n`, Wildlife Models Need Retraining
+**Date**: 2025-12-17 (Evening Session)
+**Session**: Disk Space Management & Git Sync
+**Status**: Pipeline Online, Disk at 65%, Automated Pruning Active
 
 ## What Was Accomplished
 
-### 1. Diagnosed and Fixed Pipeline Outage
-**Problem**: Pipeline was offline - no new clips since morning walk-by.
-
-**Root Cause**: Disk 100% full (492GB/492GB). RTSP capture was failing with "ffmpeg exit status 228" (no space left on device).
+### 1. Cleaned Up Old Clips and Freed Disk Space
+**Problem**: Disk at 87% with old clips from 12/14-12/16 still present.
 
 **Solution**:
-- Deleted old segments: `/srv/deer-share/runs/live/segments/2025-12-14/` (54GB) and `2025-12-15/` (38GB)
-- Freed 90GB, disk now at 82%
-- Restarted pipeline - capture resumed successfully
+- Deleted `/srv/deer-share/runs/live/analysis/2025-12-16/`
+- Deleted `/srv/deer-share/runs/live/segments/2025-12-16/`
+- Deleted `/srv/deer-share/runs/live/detections/2025-12-{14,15,16}/`
+- Deleted `/srv/deer-share/runs/live/events/2025-12-{14,15,16}/`
+- Deleted `/srv/deer-share/runs/live/remote/` (22GB - was being recreated by ingest)
 
-**Files Modified**: None (operational fix)
+**Result**: Disk now at 65% (168GB free)
 
-### 2. Created Pipeline Health Check System
-**Problem**: No automated way to verify models are working or detect regressions like AprilTag misclassification.
+### 2. Implemented Disk Space Management System
+**Problem**: Disk space emergencies kept recurring. No automated pruning of events directory.
 
-**Solution**: Created test clips infrastructure with ground truth annotations
+**Solution**: Created comprehensive disk management:
+
+1. **Reduced retention from 72h to 24h** in `run_pipeline.sh`
+2. **Disabled remote mirror** - was duplicating all clips unnecessarily
+3. **Switched analysis to hardlinks** - shares disk blocks with segments instead of copying
+4. **Created `scripts/prune_events.py`** with tiered retention:
+   - Events with "keep" tag: kept forever
+   - Reviewed with notes: 14 days
+   - Reviewed without notes: 7 days
+   - Pending review: 48 hours
+   - Unindexed: 24 hours
+5. **Added cron job** - runs every 4 hours to prune old events
 
 **New Files**:
-- `test_clips/deer_test.mkv` - Daytime clip with real deer (from 2025-12-14)
-- `test_clips/person_test.mkv` - Nighttime person walk-by (from 2025-12-16)
-- `test_clips/ground_truth.json` - Expected detections and pass/fail criteria
-- `test_clips/README.md` - Documentation
-- `scripts/pipeline_health_check.py` - Automated health check script
+- `scripts/prune_events.py` - Event pruning script with tiered retention
+- `docs/disk_management_plan.md` - Full analysis and roadmap
 
-**Usage**:
-```bash
-cd ~/projects/DeerAITrackingResponse
-source .venv/bin/activate
-python scripts/pipeline_health_check.py --verbose
-python scripts/pipeline_health_check.py --verbose --models yolov8n.pt
-```
+### 3. Synced Git Between Mac and Ubuntu Server
+**Problem**: Server was 4 commits behind main with local uncommitted changes.
 
-### 3. Discovered Critical Model Issues
-**Problem**: The v2 wildlife models (deployed Dec 16) are broken.
+**Solution**:
+- Stashed server changes, pulled latest from origin/main
+- Merged server's useful changes (IGNORED_CLASSES filter) into main
+- Server now in sync with main
 
-**Findings from health check**:
+**Committed Changes**:
+- `d39f7b3`: Add IGNORED_CLASSES filter to detector (filters apriltag, unknown_animal, etc.)
+- `ba9f80a`: Archive and gitignore TableTopSimulation/ and cutebot/
+- `d744f35`: Add disk space management and event pruning
+- `3483dfb`: Disable remote mirror, use hardlinks for analysis
 
-| Model | deer_test.mkv | person_test.mkv | Status |
-|-------|---------------|-----------------|--------|
-| yolov8n.pt (base COCO) | PASS (deer 0.31) | PASS (person 0.54) | HEALTHY |
-| yolov8n_wildlife.pt | FAIL (AprilTag FPs) | FAIL (no person) | BROKEN |
-| yolov8n_wildlife_v2.pt | FAIL (0 detections) | FAIL (AprilTag FPs) | BROKEN |
-| rtdetr_wildlife_v2.pt | FAIL (0 detections) | FAIL (AprilTag FPs) | BROKEN |
+### 4. Archived Inactive Code
+**Problem**: TableTopSimulation/ and cutebot/ cluttering repo, not needed for outdoor pipeline work.
 
-**Root Cause Theory**: The wildlife models were trained on a dataset that included AprilTag labels. The models learned to detect AprilTags as high-confidence "animals", causing:
-1. False positives on every clip (AprilTags at fixed positions)
-2. Missed actual animals (model confused)
+**Solution**:
+- Created `TableTopSimulation.zip` and `cutebot.zip` archives
+- Added both directories to `.gitignore`
+- Removed from git tracking
+
+### 5. Added AprilTag Filtering to Detector
+**Problem**: Wildlife models were detecting AprilTags as animals.
+
+**Solution**: Added `IGNORED_CLASSES` set to `scripts/live_detector_multimodel.py`:
+- Filters out: apriltag, april_tag, tag, unknown_animal
+- Only returns known COCO animal classes instead of defaulting everything to "animal"
 
 ---
 
 ## Current System State
 
 ### Pipeline Status
-- **Ingest**: ONLINE - capturing 60s segments
-- **Detection**: RUNNING with base `yolov8n.pt` (healthy on test clips)
-- **Disk**: 82% (87GB free)
+- **Ingest**: ONLINE - capturing 60s segments at 7680x2160
+- **Detection**: RUNNING with base `yolov8n.pt`
+- **Disk**: 65% (168GB free)
+- **Retention**: 24 hours (reduced from 72h)
 
-### Active Models
+### Disk Usage Breakdown
 ```
-DETECTOR_MODELS: yolov8n.pt
+/srv/deer-share/runs/live/
+├── segments/     23GB  (24h retention, auto-pruned)
+├── analysis/     23GB  (hardlinks to segments, 24h retention)
+├── events/       9.5GB (tiered retention, cron every 4h)
+├── detections/   636KB (30 days)
+└── logs/         4.5MB
 ```
-- Base COCO model passes health check for deer/person.
-- Wildlife v2 models remain BROKEN (kept out of rotation until retrained).
+
+### Cron Jobs Active
+```bash
+# Event pruning - every 4 hours
+0 */4 * * * cd ~/projects/DeerAITrackingResponse && .venv/bin/python scripts/prune_events.py
+
+# Segment pruning (existing) - every 15 minutes
+*/15 * * * * cd ~/projects/deer-vision && .venv/bin/python scripts/prune_segments_without_events.py
+```
 
 ### Monitoring Commands
 ```bash
+# Check disk space
+ssh mtornga@192.168.68.71 "df -h / && du -sh /srv/deer-share/runs/live/*/"
+
 # Check pipeline status
 ssh mtornga@192.168.68.71 "cd ~/projects/DeerAITrackingResponse && ./scripts/run_pipeline.sh status"
 
-# Run health check
-ssh mtornga@192.168.68.71 "cd ~/projects/DeerAITrackingResponse && source .venv/bin/activate && python scripts/pipeline_health_check.py --verbose"
+# Run event pruning manually (dry run)
+ssh mtornga@192.168.68.71 "cd ~/projects/DeerAITrackingResponse && source .venv/bin/activate && python scripts/prune_events.py --dry-run -v"
 
-# Check disk space
-ssh mtornga@192.168.68.71 "df -h /"
-
-# View detector logs
-ssh mtornga@192.168.68.71 "tail -30 /srv/deer-share/runs/live/logs/detector.log"
+# Check pruning logs
+ssh mtornga@192.168.68.71 "tail -50 /srv/deer-share/runs/live/logs/prune_events.log"
 ```
 
 ---
 
 ## Known Issues
 
-### 1. Wildlife Models Are Broken (CRITICAL)
-**Issue**: Both yolov8n_wildlife_v2.pt and rtdetr_wildlife_v2.pt fail the health check (0 detections on deer, AprilTag FPs on person).
+### 1. Wildlife Models Still Broken (CRITICAL)
+**Status**: Unchanged from previous session.
 
-**Impact**: Removed from pipeline; base `yolov8n.pt` temporarily in use.
+Models `yolov8n_wildlife.pt`, `yolov8n_wildlife_v2.pt`, and `rtdetr_wildlife_v2.pt` fail health check.
 
-**Fix Required**: Retrain models WITHOUT AprilTag labels in the training dataset.
+**Fix Required**: Retrain without AprilTag labels in training dataset.
 
-### 2. AprilTag Misclassification History
-**Issue**: Training data included AprilTag annotations, which corrupted model learning.
+### 2. High Video Resolution
+**Issue**: Camera captures at 7680x2160 (~170MB per 60s segment).
 
-**Evidence**: High-confidence (>0.85) "animal" detections at fixed positions matching AprilTag locations:
-- Position ~(0.85, 0.83) - right side of frame
-- Position ~(0.29, 0.65) - center-left
-- Position ~(0.16, 0.45) - left edge
+**Impact**: ~10GB/hour if running continuously.
 
-**Prevention**: Always run health check after retraining. The test clips will catch this regression.
-
-### 3. Disk Space Accumulation
-**Issue**: Segments accumulate at ~150GB/day when pipeline is running.
-
-**Mitigation Needed**:
-- Implement retention policy (72h max)
-- Add cron job to clean old segments
-- Consider external storage
+**Future Fix**: Could transcode to lower resolution for storage, but keeping full res for now for detection accuracy.
 
 ---
 
 ## Next Steps (Priority Order)
 
-### Immediate (Model Fix)
-1. **Switch to working model**: DONE. `run_pipeline.sh` default is now `yolov8n.pt` and pipeline restarted with this model.
-2. **Retrain wildlife models** WITHOUT AprilTag labels:
-   - Remove AprilTag class from dataset
-   - Retrain yolov8n and rtdetr
-   - Run health check to verify
+### Immediate
+1. ~~Disk space management~~ DONE
+2. **Retrain wildlife models** without AprilTag labels
 
-### Short-term (Quality)
-1. **Add more test clips** when CVAT is back online
-2. **Tune confidence thresholds** based on health check results
-3. **Add disk space monitoring** to prevent future outages
+### Short-term
+1. **Monitor disk usage** - verify 24h retention keeps disk under 80%
+2. **Add disk watchdog** - escalating retention based on usage
+3. **Implement delete-after-detection** - remove from analysis/ immediately after processing
 
-### Medium-term (Automation)
-1. **Cron job for health checks** - daily smoke test
-2. **Disk retention policy** - auto-delete segments older than 72h
-3. **Alert on health check failures**
+### Medium-term
+1. **Transcode events to lower resolution** for long-term storage
+2. **Daily health check cron job**
+3. **Alert on disk >80%**
 
 ---
 
@@ -140,49 +152,34 @@ ssh mtornga@192.168.68.71 "tail -30 /srv/deer-share/runs/live/logs/detector.log"
 
 ### New Files This Session
 ```
-test_clips/
-├── deer_test.mkv           # Deer test clip (137MB)
-├── person_test.mkv         # Person test clip (137MB)
-├── deer_test_frame.jpg     # Reference frame
-├── person_test_frame.jpg   # Reference frame
-├── ground_truth.json       # Expected results
-└── README.md               # Documentation
-
 scripts/
-└── pipeline_health_check.py  # Health check script
+├── prune_events.py           # Event pruning with tiered retention
+
+docs/
+└── disk_management_plan.md   # Full disk management analysis and roadmap
 ```
 
-### Key Paths
+### Key Configuration Changes
+```bash
+# run_pipeline.sh
+RETENTION_HOURS=24                    # Was 72
+--analysis-mirror-mode hardlink       # Was copy
+--remote-mirror-mode none             # Was hardlink (disabled)
 ```
-# Models
-~/projects/DeerAITrackingResponse/models/
-├── yolov8n.pt              # Base COCO - WORKING
-├── yolov8n_wildlife.pt     # Dec 16 - BROKEN
-├── yolov8n_wildlife_v2.pt  # Dec 16 - BROKEN
-└── rtdetr_wildlife_v2.pt   # Dec 16 - BROKEN
 
-# Live pipeline data
-/srv/deer-share/runs/live/
-├── segments/     # Raw captures (~150GB/day)
-├── analysis/     # Copies for detector
-├── detections/   # Detector JSON output
-├── events/       # Promoted events
-└── logs/         # Pipeline logs
+### Archived (in .gitignore)
+```
+TableTopSimulation/    # Zipped as TableTopSimulation.zip
+cutebot/               # Zipped as cutebot.zip
 ```
 
 ---
 
-## Environment & Credentials
+## Streamlit Daily Review
 
-### Ubuntu Server
-- **Host**: `192.168.68.71`
-- **User**: `mtornga`
-- **Repo**: `~/projects/DeerAITrackingResponse`
-- **Venv**: `.venv`
-
-### Services
-- **CVAT**: `http://192.168.68.71:8080/` (mtornga / TKE4life)
-- **Streamlit**: `http://192.168.68.71:8502/`
+- **URL**: http://192.168.68.71:8502/
+- **Notes for segment_182217.mkv**: "Two adults two children" (tagged: person, hard_eval)
+- Index stored at: `/srv/deer-share/index/daily_review_index.json`
 
 ---
 
@@ -190,18 +187,19 @@ scripts/
 
 | Task | Status |
 |------|--------|
-| Diagnose pipeline outage | DONE - disk full |
-| Free disk space | DONE - 90GB freed |
-| Create test clips | DONE - deer + person |
-| Create health check script | DONE |
-| Identify model issues | DONE - AprilTag misclass |
-| Fix models | NOT DONE - needs retraining |
+| Delete old clips (12/16 and before) | DONE |
+| Sync git between Mac and server | DONE |
+| Add AprilTag filtering to detector | DONE |
+| Create event pruning script | DONE |
+| Set up pruning cron job | DONE |
+| Reduce retention to 24h | DONE |
+| Disable remote mirror | DONE |
+| Switch analysis to hardlinks | DONE |
+| Archive TableTopSimulation/cutebot | DONE |
 
-**Critical Finding**: The v2 wildlife models are broken and need retraining without AprilTag labels. Use `yolov8n.pt` as temporary fallback.
-
-**New Capability**: Run `python scripts/pipeline_health_check.py --verbose` to verify pipeline health at any time.
+**Key Improvement**: Disk space is now automatically managed with tiered retention policies. The system should stay under 80% usage going forward.
 
 ---
 
-**Generated**: 2025-12-17 by Claude Code
+**Generated**: 2025-12-17 (Evening) by Claude Code
 **Handoff to**: Next development session
