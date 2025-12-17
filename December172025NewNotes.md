@@ -1,0 +1,48 @@
+Deer vision vision:
+This system accurately detects, tracks, and identifies Missouri backyard wildlife using the available hardware listed in the README and env file. 
+
+Detection, tracking, and identification can come from any software. Reolink has detection and bounding. YOLOv8, MegadetectorV5, TrapDetecorR, gpt-5, and other models, classifiers, and LLMs have been experimented with to accomplish this system. The RT-DETR model is being talked about as the best-in-class model for this type of work.
+
+The current idea is to use agents and sub-agents to do the Computer Vision and/or Machine Learning engineering. The agents can pull models from github/huggingface/etc. The agents can make use of the GTX 3080 for fine tuning and inference. Use of the camera(s), storage drive, internet, mac, ubuntu server, git, web servers like streamlit and CVAT are open for use by the agents. MCP extentions like Context7, puppeteer, playwright, google chrome are often available in the environment.
+
+Further, the idea is to depend on the developer, mtornga, only as much as necessary. mtornga is not an expert in computer vision but wants to learn. mtornga is the Product Owner of Deer Vision. mtornga owns the definition of done and tolerances for quality. 
+
+Further, the agents should work as autonomously as possible but leverage mtornga for adding new hardware to the system, or picking between two video outputs. mtornga can use CVAT to label clips when absolutely necessary.
+
+Agents should crystalize a quiver of skills and refine that list of skills rather than starting from scratch. Examples of skills would be like "PresentVideoAndCaptureUserInput.py" or "EvaluateNewClipAgainstModels.sh". 
+
+Text is very cheap! When creating scripts, document decisions, bugs, theories in comments liberally. When creating new artifacts like a directory of marked-up error frames from a video, add a text file alongside that explains when, why, and how the artifact was created. Many agents and developers will work on this project and the breadcrumbs keep us moving forward rather than spinning in circles. 
+
+Experimentation and refinement are project goals. For that reason the fine-tuning and evaluation inputs should not be discarded. When a new computer vision model like YOLOv20 comes out, we want to have all the clips, ground truth and so on to start back at "zero" and see how a new component performs versus the evaluation dataset. 
+
+The project operates on a daily cadence. The deer invade the yard almost nightly. There are also pest skunks, raccoons, and opossum. The immediate goal is as follows: In the morning, mtornga should be presented with clips that need user input. False positives, false negatives, quality issues, unknown animals, and so on. The fidelity of detection, tracking, classification should improve based on this user feedback. Within a few weeks we should have enough edge cases solved that the clip ingestion and processing is reliable. We may be solving for daytime, dusk, far away animal, rain, snow, fast animal, person with lawnmower, spiderweb in front of the camera, and so on. During this quality growth period, input needed from mtornga will relate to the detection,tracking,classification, but mtornga may also have to provide input like "This clip should be used as our most difficult evaluation test." or "This is a good example of the snow edge case" as we seek to build a non-brittle system.
+
+After the quality is excellent, we will move on to integrating the homography. 4 AprilTags are deployed. Our goal there is to be able to locate the animals within the X/Y/Z of the property and store that data. 
+
+The stretch goal with this portion of the project would be to commercialize the system such that a new use would set up camera(s), be presented with daily questions by the agents, and quickly have a detect,track,classify system working on their property without having to know CV/ML.
+
+Side goals of this project are 1. For mtornga to learn more about using coding agents, CV, ML, software development. 2. To produce portfolio content for mtornga to show the world how much he's learned and how employable he is. 
+
+The hardware of the system might be expanded with IR floodlights and additional camera angles.
+
+Spinning in circles: We have trained and retrained from base yolov8 and rt-detr a dozen times. Ideas to stop spinning in circles:
+1. Tests: have a deer mkv and a person walk-by mkv ready to test against the current state models at all times and every time there is a retraining of the model(s). The agent should make use of this to make sure everything is online, as well. Periodically feed the test clips into the ingest-detect-identify pipeline to make sure it is online and working correctly. We had a training of the models that included the AprilTag labels, which megadector classified as Animal and it made every clip have a conf score .92 of animal class. It was awful! Had to retrain everything. 
+2. We've run out of disk space and crashed everything one hundred times. Clips accumulate when part of the pipeline is offline. This has to end. 
+
+Working modes for agents and mtornga:
+
+Archaeologist:
+- This project produces many layered artifacts (clips, CSVs, JSONs, notebooks, models, logs). Treat them like sedimentary rock: each layer should be interpretable by future humans and agents.
+- Every new directory or file type should carry its own explanation (README.md or .txt alongside) so an archaeologist can infer its purpose and how it was generated.
+
+Laboratory scientist:
+- Treat model training, inference tweaks, and pipeline changes as experiments with hypotheses, inputs, and outcomes.
+- No experiment goes to waste: record parameters, versions, and key metrics so results can be compared later even if the experiment “fails”.
+
+Software engineer:
+- Favor small, composable scripts with clear interfaces and minimal hidden state.
+- Strive for testability and high uptime, even if the first drafts are rough; add simple smoke tests around critical paths (ingest, detection, tracking).
+
+Digital product owner:
+- Continuously ask how each script, artifact, and UI improves the daily experience for the end user (mtornga doing morning review).
+- Re-center on the vision when prioritizing tasks so we do not get lost in low-level tweaks that don’t move the experience forward.
