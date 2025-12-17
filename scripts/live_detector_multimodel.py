@@ -88,6 +88,14 @@ COCO_ANIMAL_CLASSES = {
 COCO_PERSON_CLASSES = {"person"}
 COCO_VEHICLE_CLASSES = {"car", "truck", "bus", "motorcycle", "bicycle", "airplane", "boat", "train"}
 
+# Classes to ignore (not interesting for wildlife monitoring)
+IGNORED_CLASSES = {
+    "apriltag",
+    "unknown_animal",  # Ambiguous class from training
+    "april_tag",
+    "tag",
+}
+
 
 @dataclass
 class ModelConfig:
@@ -260,17 +268,28 @@ def load_models(model_specs: str, device: str) -> List[ModelConfig]:
     return models
 
 
-def classify_detection(label: str) -> str:
-    """Map a class label to our category system."""
+def classify_detection(label: str) -> Optional[str]:
+    """Map a class label to our category system.
+
+    Returns:
+        Category ID ("1", "2", or "3") or None if the class should be ignored.
+    """
     label_lower = label.lower()
+
+    # Filter out non-interesting classes (calibration markers, etc.)
+    if label_lower in IGNORED_CLASSES:
+        return None
 
     if label_lower in COCO_PERSON_CLASSES or "person" in label_lower:
         return "2"
     elif label_lower in COCO_VEHICLE_CLASSES:
         return "3"
-    else:
-        # Default to animal for unknown classes (conservative for wildlife detection)
+    elif label_lower in COCO_ANIMAL_CLASSES:
         return "1"
+    else:
+        # Unknown class - log and skip rather than defaulting to animal
+        # This prevents false positives from unexpected labels
+        return None
 
 
 def run_model_on_segment(
@@ -326,6 +345,10 @@ def run_model_on_segment(
                         class_id = int(cls)
                         label = names.get(class_id, str(class_id)) if isinstance(names, dict) else str(class_id)
                         category = classify_detection(label)
+
+                        # Skip ignored/unknown classes
+                        if category is None:
+                            continue
 
                         # Normalize bbox to [x, y, w, h] format
                         bbox = [
