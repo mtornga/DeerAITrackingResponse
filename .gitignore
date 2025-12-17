@@ -37,6 +37,8 @@ runs/
 tmp/
 external/
 models/
+TableTopSimulation/
+cutebot/
 cvat-indoor/
 outdoor/eval_clips/
 outdoor/deer-vision/data/raw/
