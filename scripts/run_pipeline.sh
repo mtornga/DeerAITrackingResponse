@@ -116,6 +116,8 @@ start_pipeline() {
             --retention-hours ${RETENTION_HOURS} \\
             --output-dir '${SHARE_ROOT}/runs/live/segments' \\
             --analysis-dir '${SHARE_ROOT}/runs/live/analysis' \\
+            --analysis-mirror-mode hardlink \\
+            --remote-mirror-mode none \\
             --log-file '${LOG_DIR}/ingest.log' \\
             2>&1 | tee -a '${LOG_DIR}/ingest.log'
         echo '[\$(date)] Ingest exited, restarting in 10s...' | tee -a '${LOG_DIR}/ingest.log'
