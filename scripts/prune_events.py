@@ -90,6 +90,11 @@ def find_events(events_dir: Path) -> Dict[str, Path]:
     """Find all event directories and map clip_id to path."""
     events = {}
 
+    # Safety check: never prune golden_clips
+    if "golden_clips" in str(events_dir):
+        logging.warning("Refusing to prune golden_clips directory")
+        return {}
+
     for date_dir in events_dir.iterdir():
         if not date_dir.is_dir() or not date_dir.name.startswith("2"):
             continue

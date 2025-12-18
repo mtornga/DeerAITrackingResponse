@@ -12,11 +12,33 @@ from pathlib import Path
 from typing import Dict, List, Literal, Optional, Tuple
 
 import streamlit as st
+import subprocess
+import tempfile
+
+try:
+    import cv2
+    import numpy as np
+    CV2_AVAILABLE = True
+except ImportError:
+    CV2_AVAILABLE = False
+    cv2 = None
+    np = None
 
 
 UTC = timezone.utc
 SEGMENT_EXTENSIONS: Tuple[str, ...] = (".mp4", ".mkv")
 ReviewStatus = Literal["pending", "in_progress", "done"]
+
+# Thumbnail configuration
+THUMBNAIL_WIDTH = 640
+THUMBNAIL_HEIGHT = 360
+CATEGORY_COLORS = {
+    "animal": (0, 165, 255),    # Orange (BGR)
+    "deer": (0, 165, 255),      # Orange
+    "person": (255, 100, 100),  # Blue
+    "vehicle": (100, 255, 100), # Green
+    "unknown": (128, 128, 128), # Gray
+}
 
 
 @dataclass
@@ -203,6 +225,162 @@ def clip_bucket_local(entry: ClipEntry) -> datetime:
     return dt.replace(minute=0, second=0, microsecond=0)
 
 
+def find_best_detection(meta: Dict) -> Optional[Dict]:
+    """Find the highest confidence detection across all models."""
+    best_hit = None
+    best_conf = 0.0
+
+    models_data = meta.get("models", {})
+    for model_name, model_result in models_data.items():
+        hits = model_result.get("hits", [])
+        for hit in hits:
+            conf = hit.get("confidence", 0)
+            if conf > best_conf:
+                best_conf = conf
+                best_hit = {**hit, "model": model_name}
+
+    return best_hit
+
+
+def extract_frame_ffmpeg(video_path: Path, frame_number: int, fps: float = 15.0) -> Optional[np.ndarray]:
+    """Extract a specific frame using ffmpeg."""
+    timestamp = frame_number / fps
+
+    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+        tmp_path = tmp.name
+
+    try:
+        cmd = [
+            "ffmpeg",
+            "-ss", str(timestamp),
+            "-i", str(video_path),
+            "-vframes", "1",
+            "-q:v", "2",
+            tmp_path,
+            "-y",
+            "-loglevel", "error",
+        ]
+        subprocess.run(cmd, check=True, capture_output=True)
+
+        if os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0:
+            frame = cv2.imread(tmp_path)
+            return frame
+    except subprocess.CalledProcessError:
+        pass
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+    return None
+
+
+def draw_detection_box(
+    frame: np.ndarray,
+    bbox: List[float],
+    category: str,
+    confidence: float,
+    model: str = "",
+) -> np.ndarray:
+    """Draw bounding box and label on frame. bbox format: [x_center, y_center, width, height] normalized 0-1."""
+    h, w = frame.shape[:2]
+
+    x_center, y_center, box_w, box_h = bbox
+    x1 = int((x_center - box_w / 2) * w)
+    y1 = int((y_center - box_h / 2) * h)
+    x2 = int((x_center + box_w / 2) * w)
+    y2 = int((y_center + box_h / 2) * h)
+
+    x1, y1 = max(0, x1), max(0, y1)
+    x2, y2 = min(w, x2), min(h, y2)
+
+    color = CATEGORY_COLORS.get(category.lower(), CATEGORY_COLORS["unknown"])
+    thickness = max(2, int(min(w, h) / 200))
+    cv2.rectangle(frame, (x1, y1), (x2, y2), color, thickness)
+
+    label = f"{category} {confidence:.0%}"
+    if model:
+        label = f"{label} ({model})"
+
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = max(0.5, min(w, h) / 1000)
+    text_thickness = max(1, int(font_scale * 2))
+    (text_w, text_h), baseline = cv2.getTextSize(label, font, font_scale, text_thickness)
+
+    label_y = max(y1 - 5, text_h + 5)
+    cv2.rectangle(frame, (x1, label_y - text_h - 5), (x1 + text_w + 10, label_y + 5), color, -1)
+    cv2.putText(frame, label, (x1 + 5, label_y), font, font_scale, (255, 255, 255), text_thickness)
+
+    return frame
+
+
+def get_or_generate_thumbnail(share_root: Path, entry: ClipEntry) -> Optional[Path]:
+    """Get existing thumbnail or generate one on-the-fly."""
+    try:
+        rel_path = Path(entry.path)
+        date = rel_path.parent.name
+        stem = rel_path.stem
+    except Exception:
+        return None
+
+    events_dir = share_root / "runs" / "live" / "events" / date / stem
+    thumb_path = events_dir / "thumbnail.jpg"
+
+    # Return existing thumbnail
+    if thumb_path.exists():
+        return thumb_path
+
+    # Can't generate without cv2
+    if not CV2_AVAILABLE:
+        return None
+
+    # Try to generate thumbnail
+    meta_path = events_dir / "meta.json"
+    if not meta_path.exists():
+        return None
+
+    try:
+        meta = json.loads(meta_path.read_text())
+    except json.JSONDecodeError:
+        return None
+
+    # Find video file
+    video_path = share_root / entry.path
+    if not video_path.exists():
+        return None
+
+    # Find best detection
+    best_hit = find_best_detection(meta)
+    if not best_hit:
+        return None
+
+    # Parse frame number
+    frame_name = best_hit.get("frame", "frame_000000")
+    try:
+        frame_number = int(frame_name.replace("frame_", ""))
+    except ValueError:
+        frame_number = 0
+
+    # Extract frame
+    frame = extract_frame_ffmpeg(video_path, frame_number)
+    if frame is None:
+        return None
+
+    # Draw detection box
+    frame = draw_detection_box(
+        frame,
+        best_hit["bbox"],
+        best_hit.get("category", "unknown"),
+        best_hit.get("confidence", 0),
+        best_hit.get("model", ""),
+    )
+
+    # Resize and save
+    frame = cv2.resize(frame, (THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT))
+    cv2.imwrite(str(thumb_path), frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+
+    return thumb_path
+
+
 def main() -> None:
     st.set_page_config(page_title="Deer Vision Daily Review", layout="wide")
     st.title("Deer Vision — Daily Review")
@@ -307,6 +485,9 @@ def main() -> None:
         st.subheader("Clips")
         selected_id = st.session_state.get("selected_clip_id", filtered[0].clip_id)
 
+        # Thumbnail display option
+        show_thumbnails = st.checkbox("Show thumbnails", value=True, key="show_thumbs")
+
         prev_bucket: Optional[datetime] = None
         for entry in filtered[: int(limit)]:
             bucket = clip_bucket_local(entry)
@@ -318,8 +499,27 @@ def main() -> None:
             tags_str = ", ".join(entry.tags or [])
             conf_str = "-" if entry.max_conf is None else f"{entry.max_conf:.2f}"
 
+            # Routing icon
+            routing_icons = {
+                "auto_accept": "🟢",
+                "review": "🟡",
+                "auto_reject": "🔴",
+                "novel": "🔵",
+            }
+            routing_icon = routing_icons.get(entry.routing_decision, "")
+
+            # Show thumbnail if enabled
+            if show_thumbnails:
+                thumb_path = get_or_generate_thumbnail(share_root, entry)
+                if thumb_path and thumb_path.exists():
+                    try:
+                        # Read bytes directly to avoid SMB path issues
+                        st.image(thumb_path.read_bytes(), use_container_width=True)
+                    except Exception:
+                        pass  # Skip thumbnail if can't read
+
             if st.button(
-                f"{label}  •  max={conf_str}  •  {tags_str or 'untagged'}",
+                f"{routing_icon} {label}  •  max={conf_str}  •  {tags_str or 'untagged'}",
                 key=f"clip-btn-{entry.clip_id}",
             ):
                 selected_id = entry.clip_id
