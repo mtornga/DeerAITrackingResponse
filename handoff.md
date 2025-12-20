@@ -3,6 +3,36 @@
 **Session**: Model Retraining with Balanced Data, Golden Clips Expansion
 **Status**: Training v4 models - YOLOv8n running, RT-DETR queued
 
+---
+
+**Date**: 2025-12-19 (Evening Session)
+**Session**: Deploy v5.1 models, train RT-DETR v5.1, multi-model bakeoff, walk-by investigation
+
+## What Was Accomplished
+- Trained **RT-DETR v5.1** on `outdoor/deer-vision/data/datasets/wildlife_golden_v5/data.yaml` (batch=2, 80 epochs). Results: P 0.953 / R 0.941 / mAP50 0.970 / mAP50-95 0.828. Best saved to `models/rtdetr_wildlife_v5.1.pt`.
+- Health check: `python scripts/pipeline_health_check.py --verbose --models rtdetr_wildlife_v5.1.pt` → **HEALTHY** (deer/person clips pass).
+- Live pipeline updated to **multi-model**: `DETECTOR_MODELS=yolov8n_wildlife_v5.1.pt,rtdetr_wildlife_v5.1.pt`. Restarted tmux pipeline.
+- Cleared backlog and fast-forwarded processing to today’s walk-by window by pruning older segments/detections/events (pre segment IDs < 143000) for 2025-12-19; pipeline now processes current-day clips.
+
+## Findings / Issues
+- Walk-by clip **segment_143801.mkv**: RT-DETR v5.1 detected a person (0.927) → routed to review; **YOLOv8n v5.1 missed entirely** (max_conf 0). Re-running offline with both models (including RT-DETR) produced no boxes, so auto-labeling failed.
+- Continuation **segment_143904.mkv**: Both models detect person (YOLO max 0.835, RT-DETR 0.938) → review due to confidence < auto-accept threshold.
+- Frames extracted from segment_143801 for manual labeling live at `/tmp/segment_frames/frame_*.jpg` on the Ubuntu host.
+
+## Next Steps (recommended)
+1. **Label segment_143801**: Use the extracted frames (`/tmp/segment_frames/`) in CVAT (image import to avoid high-res video limits). Mark person(s); add rain artifacts as needed for hard negatives.
+2. Consider lowering YOLO live threshold to 0.20 if misses persist, or add light/contrast preprocessing for YOLO-only.
+3. If labeling is done, fold into the next training set (feedback/golden) and retrain YOLOv8n to close this gap.
+
+## Key Paths / Commands
+- Models: `models/yolov8n_wildlife_v5.1.pt`, `models/rtdetr_wildlife_v5.1.pt`
+- Training logs: `/tmp/rtdetr_golden_v5.1_train.log`
+- Run outputs: `runs/train/rtdetr_golden_v5.1/weights/{best,last}.pt`
+- Pipeline logs: `/srv/deer-share/runs/live/logs/{detector.log,ingest.log}`
+- Segment of interest: `/srv/deer-share/runs/live/analysis/2025-12-19/segment_143801.mkv`
+
+---
+
 ## What Was Accomplished
 
 ### 1. Diagnosed v3 Model Failure
