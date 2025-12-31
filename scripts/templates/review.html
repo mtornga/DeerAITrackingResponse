@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Review - {{ event.segment }}</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #252542;
+        }
+        .back-btn {
+            color: #4ade80;
+            text-decoration: none;
+            font-size: 16px;
+        }
+        .remaining {
+            font-size: 14px;
+            color: #888;
+        }
+        .video-container {
+            width: 100%;
+            background: #000;
+            position: relative;
+        }
+        video {
+            width: 100%;
+            max-height: 50vh;
+            object-fit: contain;
+        }
+        .info-bar {
+            padding: 12px 16px;
+            background: #252542;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .event-id {
+            font-size: 14px;
+            color: #888;
+        }
+        .confidence {
+            font-size: 16px;
+            font-weight: 600;
+            color: #4ade80;
+        }
+        .prediction {
+            padding: 8px 16px;
+            font-size: 13px;
+            color: #888;
+        }
+        .prediction span {
+            color: #fbbf24;
+        }
+        .form-section {
+            flex: 1;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .section-label {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #888;
+            margin-bottom: 8px;
+        }
+        .button-group {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .btn {
+            flex: 1;
+            min-width: 80px;
+            padding: 16px 12px;
+            border: 2px solid #444;
+            background: transparent;
+            color: #eee;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.1s;
+        }
+        .btn:active {
+            transform: scale(0.96);
+        }
+        .btn.selected {
+            border-color: #4ade80;
+            background: rgba(74, 222, 128, 0.1);
+            color: #4ade80;
+        }
+        .btn-deer.selected { border-color: #4ade80; background: rgba(74, 222, 128, 0.15); }
+        .btn-person.selected { border-color: #60a5fa; background: rgba(96, 165, 250, 0.15); color: #60a5fa; }
+        .btn-fp.selected { border-color: #f87171; background: rgba(248, 113, 113, 0.15); color: #f87171; }
+        .btn-other.selected { border-color: #fbbf24; background: rgba(251, 191, 36, 0.15); color: #fbbf24; }
+        .btn-good.selected { border-color: #4ade80; background: rgba(74, 222, 128, 0.15); }
+        .btn-marginal.selected { border-color: #fbbf24; background: rgba(251, 191, 36, 0.15); color: #fbbf24; }
+        .btn-bad.selected { border-color: #f87171; background: rgba(248, 113, 113, 0.15); color: #f87171; }
+        .submit-section {
+            padding: 16px;
+            padding-bottom: 32px;
+        }
+        .submit-btn {
+            width: 100%;
+            padding: 18px;
+            background: #4ade80;
+            color: #000;
+            border: none;
+            border-radius: 12px;
+            font-size: 18px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform 0.1s, opacity 0.1s;
+        }
+        .submit-btn:disabled {
+            background: #444;
+            color: #888;
+        }
+        .submit-btn:active:not(:disabled) {
+            transform: scale(0.98);
+        }
+        .nav-buttons {
+            display: flex;
+            gap: 8px;
+            padding: 0 16px 16px;
+        }
+        .nav-btn {
+            flex: 1;
+            padding: 12px;
+            background: #252542;
+            color: #888;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            text-decoration: none;
+            text-align: center;
+        }
+        .nav-btn:not(:disabled):hover {
+            color: #eee;
+        }
+        .existing-feedback {
+            padding: 12px 16px;
+            background: #2d4a3e;
+            color: #4ade80;
+            font-size: 14px;
+        }
+        .timeline-banner {
+            padding: 12px 16px;
+            background: #2d3a4e;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+        .timeline-info {
+            flex: 1;
+        }
+        .timeline-time {
+            font-size: 18px;
+            font-weight: 600;
+            color: #60a5fa;
+        }
+        .timeline-detail {
+            font-size: 12px;
+            color: #888;
+            margin-top: 2px;
+        }
+        .seek-btn {
+            padding: 10px 16px;
+            background: #60a5fa;
+            color: #000;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .seek-btn:active {
+            transform: scale(0.96);
+        }
+        .loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+        .loading.active {
+            display: flex;
+        }
+        .spinner {
+            width: 48px;
+            height: 48px;
+            border: 4px solid #333;
+            border-top-color: #4ade80;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <a href="/" class="back-btn">&larr; Back</a>
+        <div class="remaining">{{ remaining }} remaining</div>
+    </div>
+
+    <div class="video-container">
+        {% if event.video_files %}
+        <video controls playsinline autoplay muted loop>
+            <source src="/clip/{{ event.id }}/video/{{ event.video_files[0] }}" type="video/mp4">
+        </video>
+        {% else %}
+        <img src="/clip/{{ event.id }}/thumbnail" style="width:100%">
+        {% endif %}
+    </div>
+
+    <div class="info-bar">
+        <div class="event-id">{{ event.date }} / {{ event.segment }}</div>
+        {% if event.meta %}
+        <div class="confidence">{{ "%.0f"|format(event.meta.get('max_confidence', 0) * 100) }}%</div>
+        {% endif %}
+    </div>
+
+    {% if event.meta %}
+    <div class="prediction">
+        Model prediction:
+        {% set counts = event.meta.get('counts', {}) %}
+        {% for cat, count in counts.items() %}
+        <span>{{ cat }}({{ count }})</span>{% if not loop.last %}, {% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if event.meta and event.meta.get('detection_timeline') %}
+    {% set timeline = event.meta.get('detection_timeline') %}
+    <div class="timeline-banner">
+        <div class="timeline-info">
+            <div class="timeline-time">
+                Detected @ {{ "%.0f"|format(timeline.first_second) }}s - {{ "%.0f"|format(timeline.last_second) }}s
+            </div>
+            <div class="timeline-detail">
+                {{ timeline.total_detections }} detections, peak {{ "%.0f"|format(timeline.peak_confidence * 100) }}% @ {{ "%.0f"|format(timeline.peak_frame / 15) }}s
+            </div>
+        </div>
+        <button class="seek-btn" id="seekBtn" data-time="{{ timeline.first_second }}">
+            Jump to {{ "%.0f"|format(timeline.first_second) }}s
+        </button>
+    </div>
+    {% endif %}
+
+    {% if event.feedback %}
+    <div class="existing-feedback">
+        Previously reviewed: {{ event.feedback.category }} / {{ event.feedback.quality }}
+    </div>
+    {% endif %}
+
+    <div class="form-section">
+        <div>
+            <div class="section-label">What is this?</div>
+            <div class="button-group">
+                <button type="button" class="btn btn-deer" data-category="deer">Deer</button>
+                <button type="button" class="btn btn-person" data-category="person">Person</button>
+                <button type="button" class="btn btn-fp" data-category="false_positive">False +</button>
+                <button type="button" class="btn btn-other" data-category="other_wildlife">Other</button>
+            </div>
+        </div>
+
+        <div>
+            <div class="section-label">Quality for training?</div>
+            <div class="button-group">
+                <button type="button" class="btn btn-good" data-quality="good">Good</button>
+                <button type="button" class="btn btn-marginal" data-quality="marginal">Marginal</button>
+                <button type="button" class="btn btn-bad" data-quality="bad">Bad</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="nav-buttons">
+        {% if prev_event %}
+        <a href="/review/{{ prev_event }}" class="nav-btn">&larr; Previous</a>
+        {% else %}
+        <button class="nav-btn" disabled>&larr; Previous</button>
+        {% endif %}
+        {% if next_event %}
+        <a href="/review/{{ next_event }}" class="nav-btn">Next &rarr;</a>
+        {% else %}
+        <button class="nav-btn" disabled>Next &rarr;</button>
+        {% endif %}
+    </div>
+
+    <div class="submit-section">
+        <button class="submit-btn" id="submitBtn" disabled>Submit Feedback</button>
+    </div>
+
+    <div class="loading" id="loading">
+        <div class="spinner"></div>
+    </div>
+
+    <script>
+        let selectedCategory = null;
+        let selectedQuality = null;
+
+        // Handle category buttons
+        document.querySelectorAll('[data-category]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('[data-category]').forEach(b => b.classList.remove('selected'));
+                btn.classList.add('selected');
+                selectedCategory = btn.dataset.category;
+                updateSubmitButton();
+            });
+        });
+
+        // Handle quality buttons
+        document.querySelectorAll('[data-quality]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('[data-quality]').forEach(b => b.classList.remove('selected'));
+                btn.classList.add('selected');
+                selectedQuality = btn.dataset.quality;
+                updateSubmitButton();
+            });
+        });
+
+        function updateSubmitButton() {
+            const btn = document.getElementById('submitBtn');
+            btn.disabled = !(selectedCategory && selectedQuality);
+        }
+
+        // Handle submit
+        document.getElementById('submitBtn').addEventListener('click', async () => {
+            if (!selectedCategory || !selectedQuality) return;
+
+            document.getElementById('loading').classList.add('active');
+
+            try {
+                const response = await fetch('/review/{{ event.id }}/feedback', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        category: selectedCategory,
+                        quality: selectedQuality,
+                    }),
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    if (data.next_event) {
+                        window.location.href = '/review/' + data.next_event;
+                    } else {
+                        window.location.href = '/';
+                    }
+                } else {
+                    alert('Failed to save feedback');
+                    document.getElementById('loading').classList.remove('active');
+                }
+            } catch (err) {
+                alert('Network error: ' + err.message);
+                document.getElementById('loading').classList.remove('active');
+            }
+        });
+
+        // Pre-select based on existing feedback
+        {% if event.feedback %}
+        const existingCategory = '{{ event.feedback.category }}';
+        const existingQuality = '{{ event.feedback.quality }}';
+        const catBtn = document.querySelector(`[data-category="${existingCategory}"]`);
+        const qualBtn = document.querySelector(`[data-quality="${existingQuality}"]`);
+        if (catBtn) { catBtn.click(); }
+        if (qualBtn) { qualBtn.click(); }
+        {% endif %}
+
+        // Handle seek button
+        const seekBtn = document.getElementById('seekBtn');
+        if (seekBtn) {
+            seekBtn.addEventListener('click', () => {
+                const video = document.querySelector('video');
+                if (video) {
+                    const seekTime = parseFloat(seekBtn.dataset.time) || 0;
+                    video.currentTime = seekTime;
+                    video.play();
+                }
+            });
+        }
+
+        // Auto-seek to detection on load if timeline exists
+        {% if event.meta and event.meta.get('detection_timeline') %}
+        window.addEventListener('load', () => {
+            const video = document.querySelector('video');
+            if (video) {
+                video.addEventListener('loadedmetadata', () => {
+                    const seekTime = {{ event.meta.get('detection_timeline', {}).get('first_second', 0) }};
+                    if (seekTime > 0) {
+                        video.currentTime = Math.max(0, seekTime - 1); // Start 1s before detection
+                    }
+                }, { once: true });
+            }
+        });
+        {% endif %}
+    </script>
+</body>
+</html>

@@ -15,14 +15,8 @@ import streamlit as st
 import subprocess
 import tempfile
 
-try:
-    import cv2
-    import numpy as np
-    CV2_AVAILABLE = True
-except ImportError:
-    CV2_AVAILABLE = False
-    cv2 = None
-    np = None
+import cv2
+import numpy as np
 
 
 UTC = timezone.utc
@@ -329,10 +323,6 @@ def get_or_generate_thumbnail(share_root: Path, entry: ClipEntry) -> Optional[Pa
     if thumb_path.exists():
         return thumb_path
 
-    # Can't generate without cv2
-    if not CV2_AVAILABLE:
-        return None
-
     # Try to generate thumbnail
     meta_path = events_dir / "meta.json"
     if not meta_path.exists():
@@ -512,11 +502,7 @@ def main() -> None:
             if show_thumbnails:
                 thumb_path = get_or_generate_thumbnail(share_root, entry)
                 if thumb_path and thumb_path.exists():
-                    try:
-                        # Read bytes directly to avoid SMB path issues
-                        st.image(thumb_path.read_bytes(), use_container_width=True)
-                    except Exception:
-                        pass  # Skip thumbnail if can't read
+                    st.image(str(thumb_path), use_container_width=True)
 
             if st.button(
                 f"{routing_icon} {label}  •  max={conf_str}  •  {tags_str or 'untagged'}",

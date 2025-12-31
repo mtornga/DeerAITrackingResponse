@@ -34,12 +34,18 @@ LOG_DIR="${SHARE_ROOT}/runs/live/logs"
 # Pipeline parameters
 SEGMENT_LENGTH="${SEGMENT_LENGTH:-60}"           # seconds per segment
 RETENTION_HOURS="${RETENTION_HOURS:-24}"         # keep 24h of segments (reduced from 72h to manage disk)
-DETECTOR_MODELS="${DETECTOR_MODELS:-yolov8n.pt}"  # temporary: pin to base COCO until wildlife models are retrained
+DETECTOR_MODELS="${DETECTOR_MODELS:-yolov8n_wildlife_v6_day.pt}"  # v6 wildlife models
+DETECTOR_MODELS_DAY="${DETECTOR_MODELS_DAY:-}"    # optional day-specific models (comma-separated)
+DETECTOR_MODELS_NIGHT="${DETECTOR_MODELS_NIGHT:-}"  # optional night-specific models
 DETECTOR_CONFIDENCE="${DETECTOR_CONFIDENCE:-0.25}"
+LIGHTING_MODE="${LIGHTING_MODE:-auto}"            # auto|day|night
+LIGHTING_FRAME_RATIO="${LIGHTING_FRAME_RATIO:-0.5}" # frame sample for lighting heuristic
 POLL_INTERVAL="${POLL_INTERVAL:-10}"             # seconds between detector checks
 ENABLE_ROUTING="${ENABLE_ROUTING:-true}"         # enable autonomous routing
 AUTO_ACCEPT_THRESHOLD="${AUTO_ACCEPT_THRESHOLD:-0.85}"  # min confidence for auto-accept
 DETECTOR_DEVICE="${DETECTOR_DEVICE:-cuda:0}"     # pytorch device (cuda:0 or cpu)
+MIN_CLUSTER_DETECTIONS="${DETECTOR_MIN_CLUSTER_DETECTIONS:-3}"  # temporal filter: min detections
+MAX_FRAME_GAP="${DETECTOR_MAX_FRAME_GAP:-30}"    # temporal filter: max gap between frames
 
 # Camera - default to REOLINK_3
 CAMERA_URL="${REOLINK_3_RTSP:-}"
@@ -135,16 +141,30 @@ start_pipeline() {
         routing_flags="--enable-routing --auto-accept-threshold ${AUTO_ACCEPT_THRESHOLD}"
     fi
 
+    local lighting_flags=""
+    if [[ -n "${DETECTOR_MODELS_DAY}" || -n "${DETECTOR_MODELS_NIGHT}" ]]; then
+        lighting_flags="--lighting-mode ${LIGHTING_MODE} --lighting-frame-ratio ${LIGHTING_FRAME_RATIO}"
+        if [[ -n "${DETECTOR_MODELS_DAY}" ]]; then
+            lighting_flags+=" --models-day '${DETECTOR_MODELS_DAY}'"
+        fi
+        if [[ -n "${DETECTOR_MODELS_NIGHT}" ]]; then
+            lighting_flags+=" --models-night '${DETECTOR_MODELS_NIGHT}'"
+        fi
+    fi
+
     local detector_cmd="cd '${REPO_ROOT}' && source '${VENV_PATH}/bin/activate' && sleep 15 && while true; do
         echo '[\$(date)] Starting multi-model detector...' | tee -a '${LOG_DIR}/detector.log'
         python scripts/live_detector_multimodel.py \\
             --models '${DETECTOR_MODELS}' \\
+            ${lighting_flags} \\
             --segments-dir '${SHARE_ROOT}/runs/live/analysis' \\
             --detections-dir '${SHARE_ROOT}/runs/live/detections' \\
             --events-dir '${SHARE_ROOT}/runs/live/events' \\
             --event-threshold ${DETECTOR_CONFIDENCE} \\
             --poll-interval ${POLL_INTERVAL} \\
             --device ${DETECTOR_DEVICE} \\
+            --min-cluster-detections ${MIN_CLUSTER_DETECTIONS} \\
+            --max-frame-gap ${MAX_FRAME_GAP} \\
             ${routing_flags} \\
             --log-file '${LOG_DIR}/detector.log' \\
             2>&1 | tee -a '${LOG_DIR}/detector.log'
@@ -174,14 +194,31 @@ tail -3 ${LOG_DIR}/detector.log 2>/dev/null'"
 
     tmux send-keys -t "${SESSION_NAME}:0.2" "${status_cmd}" C-m
 
-    # Arrange panes nicely
-    tmux select-layout -t "${SESSION_NAME}:0" main-horizontal
+    # Split and create Pane 3: Mobile Review Server
+    tmux split-window -v -t "${SESSION_NAME}:0.1"
+
+    local review_port="${REVIEW_SERVER_PORT:-8501}"
+    local review_cmd="cd '${REPO_ROOT}' && source '${VENV_PATH}/bin/activate' && while true; do
+        echo '[\$(date)] Starting mobile review server on port ${review_port}...' | tee -a '${LOG_DIR}/review.log'
+        python scripts/mobile_review_server.py \\
+            --host 0.0.0.0 \\
+            --port ${review_port} \\
+            2>&1 | tee -a '${LOG_DIR}/review.log'
+        echo '[\$(date)] Review server exited, restarting in 10s...' | tee -a '${LOG_DIR}/review.log'
+        sleep 10
+    done"
+
+    tmux send-keys -t "${SESSION_NAME}:0.3" "${review_cmd}" C-m
+
+    # Arrange panes nicely (tiled layout for 4 panes)
+    tmux select-layout -t "${SESSION_NAME}:0" tiled
 
     echo ""
     echo "Pipeline started in tmux session '${SESSION_NAME}'"
     echo "  - Use '$0 attach' to view"
     echo "  - Use '$0 stop' to stop"
     echo "  - Use '$0 logs' to tail logs"
+    echo "  - Mobile review: http://$(hostname -I | awk '{print $1}'):${review_port}/"
 }
 
 stop_pipeline() {

@@ -1,0 +1,15 @@
+# Wildlife detection dataset - Phase 1: Deer + Person
+# Uses latest feedback dataset with simplified class mapping
+
+path: /home/mtornga/projects/DeerAITrackingResponse/outdoor/deer-vision/data/datasets/deer_det_feedback_20251215_214954
+train: images/train
+val: images/val
+
+# Simplified classes for wildlife detection
+# Note: Original labels use class 0=deer, 2=person
+# We keep the same indices for compatibility
+names:
+  0: deer
+  1: unknown_animal
+  2: person
+  3: apriltag

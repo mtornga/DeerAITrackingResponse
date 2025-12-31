@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 import cv2
+import numpy as np
 import torch
 
 # Import routing module (if available)
@@ -36,6 +37,13 @@ try:
     ROUTING_AVAILABLE = True
 except ImportError:
     ROUTING_AVAILABLE = False
+
+# Import notification module (if available)
+try:
+    from notify import notify_wildlife_detection, PushoverConfig
+    NOTIFICATIONS_AVAILABLE = True
+except ImportError:
+    NOTIFICATIONS_AVAILABLE = False
 
 
 def _ensure_repo_root_on_path() -> Path:
@@ -74,6 +82,9 @@ DEFAULT_SEGMENTS_DIR = default_live_path("runs/live/analysis")
 DEFAULT_DETECTIONS_DIR = default_live_path("runs/live/detections")
 DEFAULT_EVENTS_DIR = default_live_path("runs/live/events")
 DEFAULT_LOG_PATH = Path("logs/live_detector_multimodel.log")
+# Lighting defaults for day/night selection
+DEFAULT_LIGHTING_MODE = "auto"  # auto|day|night
+DEFAULT_FRAME_RATIO = 0.5
 
 # Category mapping (MegaDetector style)
 CATEGORY_MAP = {"animal": "1", "person": "2", "vehicle": "3"}
@@ -155,6 +166,133 @@ def format_utc(ts: datetime) -> str:
     return ts.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+def parse_frame_number(frame_str: str) -> int:
+    """Extract frame number from 'frame_000123' format."""
+    if frame_str.startswith("frame_"):
+        return int(frame_str[6:])
+    return int(frame_str)
+
+
+def find_detection_clusters(
+    hits: List[Dict],
+    max_frame_gap: int = 30,
+) -> List[List[Dict]]:
+    """
+    Group detections into temporal clusters.
+
+    Args:
+        hits: List of detection dicts with 'frame' field
+        max_frame_gap: Max frames between detections to be in same cluster
+
+    Returns:
+        List of clusters, each cluster is a list of hits
+    """
+    if not hits:
+        return []
+
+    # Sort by frame number
+    sorted_hits = sorted(hits, key=lambda h: parse_frame_number(h.get("frame", "frame_0")))
+
+    clusters = []
+    current_cluster = [sorted_hits[0]]
+
+    for hit in sorted_hits[1:]:
+        current_frame = parse_frame_number(hit.get("frame", "frame_0"))
+        last_frame = parse_frame_number(current_cluster[-1].get("frame", "frame_0"))
+
+        if current_frame - last_frame <= max_frame_gap:
+            current_cluster.append(hit)
+        else:
+            clusters.append(current_cluster)
+            current_cluster = [hit]
+
+    clusters.append(current_cluster)
+    return clusters
+
+
+def has_temporal_consistency(
+    model_results: Dict[str, "ModelResult"],
+    min_detections: int = 3,
+    max_frame_gap: int = 30,
+    min_confidence: float = 0.25,
+) -> bool:
+    """
+    Check if detections cluster together (real animal walking through).
+
+    Args:
+        model_results: Dict of model name -> ModelResult
+        min_detections: Minimum detections in a cluster
+        max_frame_gap: Max frames between detections to be in same cluster
+        min_confidence: Minimum confidence to count detection
+
+    Returns:
+        True if there's a cluster with min_detections
+    """
+    # Collect all interesting hits from all models
+    all_hits = []
+    for result in model_results.values():
+        for det in result.detections:
+            if det.category in INTERESTING_CATEGORIES and det.confidence >= min_confidence:
+                all_hits.append(det.to_dict())
+
+    if len(all_hits) < min_detections:
+        return False
+
+    clusters = find_detection_clusters(all_hits, max_frame_gap)
+
+    # Check if any cluster has enough detections
+    for cluster in clusters:
+        if len(cluster) >= min_detections:
+            return True
+
+    return False
+
+
+def calculate_detection_timeline(
+    model_results: Dict[str, "ModelResult"],
+    fps: float = 15.0,
+    min_confidence: float = 0.25,
+) -> Optional[Dict]:
+    """
+    Calculate timeline info for detections.
+
+    Returns dict with first_frame, last_frame, first_second, etc.
+    """
+    all_hits = []
+    for result in model_results.values():
+        for det in result.detections:
+            if det.category in INTERESTING_CATEGORIES and det.confidence >= min_confidence:
+                all_hits.append({
+                    "frame": det.frame_idx,
+                    "confidence": det.confidence,
+                    "category": det.category,
+                    "bbox": det.bbox,
+                })
+
+    if not all_hits:
+        return None
+
+    frames = [h["frame"] for h in all_hits]
+    confidences = [h["confidence"] for h in all_hits]
+
+    first_frame = min(frames)
+    last_frame = max(frames)
+    peak_idx = confidences.index(max(confidences))
+    peak_hit = all_hits[peak_idx]
+
+    return {
+        "first_frame": first_frame,
+        "last_frame": last_frame,
+        "first_second": round(first_frame / fps, 1),
+        "last_second": round(last_frame / fps, 1),
+        "duration": round((last_frame - first_frame) / fps, 1),
+        "peak_frame": peak_hit["frame"],
+        "peak_confidence": round(peak_hit["confidence"], 3),
+        "peak_bbox": peak_hit["bbox"],
+        "total_detections": len(all_hits),
+    }
+
+
 def configure_logging(log_path: Path) -> None:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(
@@ -174,6 +312,18 @@ def parse_args() -> argparse.Namespace:
         default="yolov8n.pt,rtdetr-l.pt",
         help="Comma-separated list of model paths (default: yolov8n.pt,rtdetr-l.pt)",
     )
+    parser.add_argument(
+        "--models-day",
+        type=str,
+        default="",
+        help="Comma-separated list of model paths for daytime lighting (optional).",
+    )
+    parser.add_argument(
+        "--models-night",
+        type=str,
+        default="",
+        help="Comma-separated list of model paths for nighttime/IR lighting (optional).",
+    )
     parser.add_argument("--segments-dir", type=Path, default=DEFAULT_SEGMENTS_DIR)
     parser.add_argument("--detections-dir", type=Path, default=DEFAULT_DETECTIONS_DIR)
     parser.add_argument("--events-dir", type=Path, default=DEFAULT_EVENTS_DIR)
@@ -182,6 +332,19 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=0.25,
         help="Confidence threshold to promote an event (default: 0.25)",
+    )
+    parser.add_argument(
+        "--lighting-mode",
+        type=str,
+        choices=["auto", "day", "night"],
+        default=DEFAULT_LIGHTING_MODE,
+        help="Lighting selection mode: auto (choose day/night models), or force day/night.",
+    )
+    parser.add_argument(
+        "--lighting-frame-ratio",
+        type=float,
+        default=DEFAULT_FRAME_RATIO,
+        help="Frame ratio to sample for lighting detection (default: 0.5 for middle).",
     )
     parser.add_argument(
         "--frame-sample",
@@ -230,6 +393,23 @@ def parse_args() -> argparse.Namespace:
         default=0.85,
         help="Minimum confidence for auto-accept (default: 0.85)",
     )
+    parser.add_argument(
+        "--min-cluster-detections",
+        type=int,
+        default=3,
+        help="Minimum detections in a temporal cluster to promote (default: 3)",
+    )
+    parser.add_argument(
+        "--max-frame-gap",
+        type=int,
+        default=30,
+        help="Maximum frames between detections to be in same cluster (default: 30)",
+    )
+    parser.add_argument(
+        "--disable-temporal-filter",
+        action="store_true",
+        help="Disable temporal consistency filter (promote on single detection)",
+    )
     return parser.parse_args()
 
 
@@ -266,6 +446,56 @@ def load_models(model_specs: str, device: str) -> List[ModelConfig]:
             logging.error(f"  Failed to load {name}: {e}")
 
     return models
+
+
+def detect_lighting(
+    video_path: Path,
+    frame_ratio: float = DEFAULT_FRAME_RATIO,
+) -> Tuple[str, float, Dict[str, float]]:
+    """Classify segment lighting using a single sampled frame."""
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        return "day", 0.0, {}
+
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    ratios = []
+    for r in (frame_ratio, 0.5, 0.25, 0.75, 0.1):
+        if r not in ratios:
+            ratios.append(r)
+
+    frame = None
+    for r in ratios:
+        target = int(frame_count * r)
+        if target > 0:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, target)
+        ok, candidate = cap.read()
+        if ok:
+            frame = candidate
+            break
+
+    cap.release()
+    if frame is None:
+        return "day", 0.0, {}
+
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    mean_hsv = hsv.reshape(-1, 3).mean(axis=0)
+    mean_sat = float(mean_hsv[1])
+    mean_val = float(mean_hsv[2])
+
+    sat_score = float(np.clip((mean_sat - 15.0) / 70.0, 0.0, 1.0))
+    val_score = float(np.clip((mean_val - 60.0) / 140.0, 0.0, 1.0))
+    day_score = 0.6 * sat_score + 0.4 * val_score
+    label = "day" if day_score >= 0.5 else "night"
+    confidence = abs(day_score - 0.5) * 2.0
+
+    metrics = {
+        "mean_sat": mean_sat,
+        "mean_val": mean_val,
+        "sat_score": sat_score,
+        "val_score": val_score,
+        "day_score": day_score,
+    }
+    return label, confidence, metrics
 
 
 def classify_detection(label: str) -> Optional[str]:
@@ -411,6 +641,7 @@ def promote_event(
     model_results: Dict[str, ModelResult],
     promoted_by: str,
     routing_result: Optional[Any] = None,
+    detection_timeline: Optional[Dict] = None,
 ) -> Path:
     """Promote a segment to the events directory with multi-model results."""
     relative = segment_path.relative_to(segments_root)
@@ -442,6 +673,10 @@ def promote_event(
     meta["max_confidence"] = max_conf_overall
     meta["counts"] = all_counts
 
+    # Add detection timeline if available
+    if detection_timeline:
+        meta["detection_timeline"] = detection_timeline
+
     # Add routing decision if available
     if routing_result is not None and hasattr(routing_result, "to_dict"):
         meta["routing"] = routing_result.to_dict()
@@ -460,7 +695,9 @@ def promote_event(
 
 def process_segment(
     args: argparse.Namespace,
-    models: List[ModelConfig],
+    models_default: List[ModelConfig],
+    models_day: List[ModelConfig],
+    models_night: List[ModelConfig],
     segment_path: Path,
     pseudo_store: Optional[Any] = None,
     routing_config: Optional[Any] = None,
@@ -473,12 +710,33 @@ def process_segment(
     if meta_path.exists():
         return
 
-    logging.info(f"Processing {relative} with {len(models)} model(s)")
+    # Pick lighting and models
+    lighting_label = args.lighting_mode
+    lighting_conf = None
+    lighting_metrics: Dict[str, float] = {}
+    if args.lighting_mode == "auto" and models_day and models_night:
+        lighting_label, lighting_conf, lighting_metrics = detect_lighting(
+            segment_path, frame_ratio=args.lighting_frame_ratio
+        )
+    elif args.lighting_mode in {"day", "night"}:
+        lighting_label = args.lighting_mode
+
+    if lighting_label == "day" and models_day:
+        active_models = models_day
+    elif lighting_label == "night" and models_night:
+        active_models = models_night
+    else:
+        active_models = models_default
+
+    logging.info(
+        f"Processing {relative} with lighting={lighting_label} "
+        f"(conf={lighting_conf}) using {len(active_models)} model(s)"
+    )
 
     model_results: Dict[str, ModelResult] = {}
     promoted_by: Optional[str] = None
 
-    for model_config in models:
+    for model_config in active_models:
         result = run_model_on_segment(
             model_config,
             segment_path,
@@ -509,8 +767,38 @@ def process_segment(
         routing_result = route_detection(model_dicts, routing_config)
         logging.info(f"  Routing: {routing_result.decision.value} ({routing_result.reason})")
 
-    # Promote if any model found something interesting
-    if promoted_by:
+    # Check temporal consistency (filter single-frame noise)
+    temporal_ok = True
+    if not args.disable_temporal_filter and promoted_by:
+        temporal_ok = has_temporal_consistency(
+            model_results,
+            min_detections=args.min_cluster_detections,
+            max_frame_gap=args.max_frame_gap,
+            min_confidence=args.event_threshold,
+        )
+        if not temporal_ok:
+            logging.info(
+                f"  Temporal filter: REJECTED (need {args.min_cluster_detections}+ "
+                f"clustered detections within {args.max_frame_gap} frames)"
+            )
+
+    # Calculate detection timeline
+    detection_timeline = None
+    if promoted_by and temporal_ok:
+        detection_timeline = calculate_detection_timeline(
+            model_results,
+            fps=15.0,  # Assuming 15fps video
+            min_confidence=args.event_threshold,
+        )
+        if detection_timeline:
+            logging.info(
+                f"  Timeline: {detection_timeline['first_second']:.1f}s - "
+                f"{detection_timeline['last_second']:.1f}s "
+                f"(peak @ {detection_timeline['peak_confidence']:.0%})"
+            )
+
+    # Promote if any model found something interesting AND passes temporal filter
+    if promoted_by and temporal_ok:
         event_dir = promote_event(
             segment_path,
             args.segments_dir,
@@ -518,7 +806,49 @@ def process_segment(
             model_results,
             promoted_by,
             routing_result,
+            detection_timeline,
         )
+
+        # Send push notification
+        if NOTIFICATIONS_AVAILABLE:
+            # Find the best detection for notification
+            best_category = "animal"
+            best_conf = 0.0
+            for result in model_results.values():
+                for det in result.detections:
+                    if det.confidence > best_conf:
+                        best_conf = det.confidence
+                        best_category = CATEGORY_NAMES.get(det.category, "animal")
+
+            # Build review URL
+            server_ip = os.environ.get("DEERVISION_UBUNTU_HOST", "192.168.68.71")
+            review_port = os.environ.get("REVIEW_SERVER_PORT", "8501")
+            event_id = f"{relative.parent}/{segment_path.stem}"
+            review_url = f"http://{server_ip}:{review_port}/review/{event_id}"
+
+            # Find video path for thumbnail
+            video_files = list(event_dir.glob("*.mkv")) + list(event_dir.glob("*.mp4"))
+            video_path = video_files[0] if video_files else None
+
+            # Include timing info in notification
+            timing_info = None
+            if detection_timeline:
+                timing_info = (
+                    detection_timeline["first_second"],
+                    detection_timeline["last_second"],
+                )
+
+            try:
+                notify_wildlife_detection(
+                    event_id=event_id,
+                    category=best_category,
+                    confidence=best_conf,
+                    video_path=video_path,
+                    review_url=review_url,
+                    timing_info=timing_info,
+                )
+            except Exception as e:
+                logging.warning(f"Notification failed: {e}")
 
         # Add to pseudo-label store if auto-accepted
         if (
@@ -533,11 +863,31 @@ def process_segment(
         # Still save results for analysis (in detections dir, not events)
         det_dir = args.detections_dir / relative.parent / segment_path.stem
         det_dir.mkdir(parents=True, exist_ok=True)
+
+        # Determine rejection reason
+        max_conf = max(r.max_confidence for r in model_results.values())
+        if promoted_by and not temporal_ok:
+            rejection_reason = "temporal_filter"
+            rejection_detail = (
+                f"Detection found but rejected: need {args.min_cluster_detections}+ "
+                f"clustered detections within {args.max_frame_gap} frames"
+            )
+        else:
+            rejection_reason = "below_threshold"
+            rejection_detail = f"max_conf={max_conf:.3f} < threshold={args.event_threshold}"
+
         meta = {
             "segment": str(relative),
             "created_at": format_utc(utc_now()),
             "promoted": False,
+            "rejection_reason": rejection_reason,
+            "rejection_detail": rejection_detail,
             "models": {name: result.to_dict() for name, result in model_results.items()},
+            "lighting": {
+                "label": lighting_label,
+                "confidence": lighting_conf,
+                "metrics": lighting_metrics,
+            },
         }
 
         # Add routing info even for non-promoted segments
@@ -546,8 +896,7 @@ def process_segment(
 
         (det_dir / "meta.json").write_text(json.dumps(meta, indent=2))
 
-        max_conf = max(r.max_confidence for r in model_results.values())
-        logging.info(f"  No promotion (max_conf={max_conf:.3f} < threshold={args.event_threshold})")
+        logging.info(f"  No promotion ({rejection_reason}: {rejection_detail})")
 
 
 def main() -> int:
@@ -561,8 +910,11 @@ def main() -> int:
     args.events_dir.mkdir(parents=True, exist_ok=True)
 
     # Load models
-    models = load_models(args.models, args.device)
-    if not models:
+    models_default = load_models(args.models, args.device) if args.models else []
+    models_day = load_models(args.models_day, args.device) if args.models_day else []
+    models_night = load_models(args.models_night, args.device) if args.models_night else []
+
+    if not any([models_default, models_day, models_night]):
         logging.error("No models loaded, exiting")
         return 1
 
@@ -592,7 +944,10 @@ def main() -> int:
             logging.info(f"Pseudo-label store: {pseudo_label_dir}")
 
     logging.info(f"Watching {args.segments_dir} for segments (min age {args.min_segment_age}s)")
-    logging.info(f"Models: {[m.name for m in models]}")
+    logging.info(
+        f"Models default: {[m.name for m in models_default]}, "
+        f"day: {[m.name for m in models_day]}, night: {[m.name for m in models_night]}"
+    )
     logging.info(f"Event threshold: {args.event_threshold}")
 
     try:
@@ -607,7 +962,15 @@ def main() -> int:
                 if meta_path.exists():
                     continue
 
-                process_segment(args, models, segment_path, pseudo_store, routing_config)
+                process_segment(
+                    args,
+                    models_default,
+                    models_day,
+                    models_night,
+                    segment_path,
+                    pseudo_store,
+                    routing_config,
+                )
                 work_done = True
 
             if not work_done:

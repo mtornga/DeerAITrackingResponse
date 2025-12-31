@@ -5,10 +5,16 @@ Pipeline health check script.
 Runs test clips through the detection pipeline and validates results against
 ground truth. Used to verify the pipeline is operational and models are working.
 
+Supports --lighting day|night mode:
+  - day: Tests both deer and person detection (full health check)
+  - night: Tests only deer detection (skips person_test.mkv since night models
+           are not trained on person data)
+
 Usage:
     python scripts/pipeline_health_check.py
     python scripts/pipeline_health_check.py --verbose
     python scripts/pipeline_health_check.py --models yolov8n_wildlife.pt
+    python scripts/pipeline_health_check.py --lighting night --models yolov8n_wildlife_v6_night.pt
 """
 
 from __future__ import annotations
@@ -101,6 +107,7 @@ def check_system_components() -> Dict[str, bool]:
     # Check test clips exist
     checks["test_clips_dir_exists"] = TEST_CLIPS_DIR.exists()
     checks["deer_test_clip_exists"] = (TEST_CLIPS_DIR / "deer_test.mkv").exists()
+    checks["deer_test_night_clip_exists"] = (TEST_CLIPS_DIR / "deer_test_night.mkv").exists()
     checks["person_test_clip_exists"] = (TEST_CLIPS_DIR / "person_test.mkv").exists()
     checks["ground_truth_exists"] = (TEST_CLIPS_DIR / "ground_truth.json").exists()
 
@@ -350,6 +357,7 @@ def run_health_check(
     model_names: Optional[List[str]] = None,
     device: str = "cuda:0",
     verbose: bool = False,
+    lighting: str = "day",
 ) -> PipelineStatus:
     """Run full pipeline health check."""
     timestamp = datetime.now().astimezone().isoformat()
@@ -409,10 +417,19 @@ def run_health_check(
 
     if verbose:
         print(f"\nModels to test: {[p.name for p in model_paths]}")
+        print(f"Lighting mode: {lighting}")
 
     # Run tests on each clip
+    # Night mode: test deer_test_night.mkv only (night IR footage, no person test)
+    # Day mode: test deer_test.mkv + person_test.mkv
     clip_results = []
-    test_clips = ["deer_test.mkv", "person_test.mkv"]
+    if lighting == "night":
+        test_clips = ["deer_test_night.mkv"]
+        if verbose:
+            print("Night mode: testing deer_test_night.mkv (IR footage)")
+            print("Night mode: skipping person test (night models not trained on person data)")
+    else:
+        test_clips = ["deer_test.mkv", "person_test.mkv"]
 
     for clip_name in test_clips:
         clip_path = TEST_CLIPS_DIR / clip_name
@@ -488,6 +505,13 @@ def main():
     parser.add_argument("--device", type=str, default="cuda:0", help="Device to use")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     parser.add_argument("--json", action="store_true", help="Output JSON format")
+    parser.add_argument(
+        "--lighting",
+        type=str,
+        choices=["day", "night"],
+        default="day",
+        help="Lighting mode: 'day' tests deer+person, 'night' tests deer only",
+    )
     args = parser.parse_args()
 
     model_names = None
@@ -495,13 +519,14 @@ def main():
         model_names = [m.strip() for m in args.models.split(",")]
 
     print("=" * 60)
-    print("Pipeline Health Check")
+    print(f"Pipeline Health Check ({args.lighting} mode)")
     print("=" * 60)
 
     status = run_health_check(
         model_names=model_names,
         device=args.device,
         verbose=args.verbose,
+        lighting=args.lighting,
     )
 
     if args.json:

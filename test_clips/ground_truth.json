@@ -74,6 +74,29 @@
         "person_confidence_min": 0.4,
         "max_false_positives": 2
       }
+    },
+    "deer_test_night.mkv": {
+      "source": "/srv/deer-share/golden_clips/buck/night/2025-12-17_232808_buck/segment_232808.mkv",
+      "recorded": "2025-12-17T23:28:08Z",
+      "lighting": "night",
+      "description": "Nighttime IR deer footage, buck visible in yard",
+      "expected_detections": {
+        "deer": {
+          "count": 1,
+          "min_confidence": 0.5,
+          "notes": "Buck deer visible in IR night footage"
+        },
+        "person": {
+          "count": 0,
+          "notes": "No person in this clip"
+        }
+      },
+      "quality_criteria": {
+        "must_detect_deer": true,
+        "must_not_detect_person": true,
+        "deer_confidence_min": 0.25,
+        "max_false_positives": 2
+      }
     }
   },
   "pass_criteria": {
