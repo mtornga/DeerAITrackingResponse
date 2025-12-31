@@ -1,4 +1,73 @@
 # Developer Handoff Notes
+
+**Date**: 2025-12-30 (Afternoon Session)
+**Session**: Wildlife v7 Training - Label Fix & 2-Class Models
+**Status**: RT-DETR Day training (77/100 epochs), Night queued
+
+---
+
+## What Was Accomplished
+
+### 1. Fixed Critical Label Issue
+**Problem**: Person folders were incorrectly labeled as class 0 (deer) instead of class 1.
+
+**Solution**:
+- Relabeled all person folders (`person_day`, `person_night`) to class 1
+- Purged 260 corrupted apriltag labels from `golden_staging/` (identical bbox at 0.674, 0.117)
+- Verified class distribution: deer=0, person=1
+
+### 2. Trained YOLOv8n v7 Models (Complete)
+| Model | mAP50 | mAP50-95 | Location |
+|-------|-------|----------|----------|
+| yolov8n_wildlife_v7_day | ~97% | ~70% | `/srv/deer-share/models/` |
+| yolov8n_wildlife_v7_night | ~98% | ~70% | `/srv/deer-share/models/` |
+
+### 3. RT-DETR v7 Training (In Progress)
+| Model | Status | Current Metrics |
+|-------|--------|-----------------|
+| rtdetr_wildlife_v7_day | Epoch 77/100 | mAP50: 98%, mAP50-95: 84.4% |
+| rtdetr_wildlife_v7_night | Queued | - |
+
+### 4. Documentation Created
+- `docs/wildlife_v7_training.md` - Full training details, data sources, results
+
+## Training Data Summary
+
+| Source | Deer | Person |
+|--------|------|--------|
+| nestcam_frames | 1,108 | 85 |
+| golden_clips_frames | 724 | 2,013 |
+
+## Commands to Complete Training
+
+```bash
+# Check RT-DETR progress on RunPod
+ssh -p 10468 -i ~/.ssh/id_ed25519 root@213.173.108.200 \
+  "grep -oP '\\d+/100' /workspace/train_rtdetr_v7_b2.log | tail -1"
+
+# Transfer RT-DETR models when done (after epoch 100/100)
+scp -P 10468 -i ~/.ssh/id_ed25519 \
+  root@213.173.108.200:/workspace/runs/detect/rtdetr_v7_day/weights/best.pt \
+  mtornga@192.168.68.71:/srv/deer-share/models/rtdetr_wildlife_v7_day.pt
+
+# Start RT-DETR Night after Day completes
+ssh -p 10468 -i ~/.ssh/id_ed25519 root@213.173.108.200 \
+  "cd /workspace && sed 's/v7_day/v7_night/g' train_rtdetr_v7_b2.py > train_rtdetr_v7_night.py && nohup python train_rtdetr_v7_night.py > train_rtdetr_v7_night.log 2>&1 &"
+```
+
+## Key Learnings
+
+1. **Label verification is critical** - Always check class distribution before training
+2. **YOLO label format**: `class x_center y_center width height`
+3. **RT-DETR memory**: Requires batch=2 on 20GB GPU (A4500)
+4. **Corrupted labels**: AprilTag false positives had identical bbox positions
+
+---
+
+**Previous Sessions Below**
+
+---
+
 **Date**: 2025-12-18 (Morning/Afternoon Session)
 **Session**: Model Retraining with Balanced Data, Golden Clips Expansion
 **Status**: Training v4 models - YOLOv8n running, RT-DETR queued

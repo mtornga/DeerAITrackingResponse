@@ -7,7 +7,17 @@
       "Bash(git commit:*)",
       "Bash(git rm:*)",
       "Bash(ssh:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(git push:*)",
+      "Bash(zip:*)",
+      "Bash(chmod:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "Bash(du:*)",
+      "Bash(ls:*)",
+      "Bash(scp:*)",
+      "Bash(python3:*)",
+      "Bash(cat:*)"
     ]
   },
   "enableAllProjectMcpServers": true,

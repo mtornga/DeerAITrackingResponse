@@ -394,8 +394,8 @@ def run_health_check(
 
     # Determine models to test
     if model_names is None:
-        # Default: test wildlife models
-        model_names = ["yolov8n_wildlife_v2.pt", "rtdetr_wildlife_v2.pt"]
+        # Default: test wildlife v7 day models
+        model_names = ["yolov8n_wildlife_v7_day.pt", "rtdetr_wildlife_v7_day.pt"]
 
     model_paths = []
     for name in model_names:
