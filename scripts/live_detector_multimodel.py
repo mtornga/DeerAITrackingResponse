@@ -248,6 +248,105 @@ def has_temporal_consistency(
     return False
 
 
+def is_static_detection(
+    model_results: Dict[str, "ModelResult"],
+    min_confidence: float = 0.25,
+    max_position_variance: float = 0.02,
+    min_samples: int = 5,
+) -> bool:
+    """
+    Check if detections are static (same position across frames = likely FP).
+
+    Static detections are typically fixed scene features (posts, shadows,
+    dark patches) that the model consistently misclassifies.
+
+    Args:
+        model_results: Dict of model name -> ModelResult
+        min_confidence: Minimum confidence to include detection
+        max_position_variance: Max x-position variance for "static" (0.02 = 2% of frame)
+        min_samples: Minimum samples needed to determine if static
+
+    Returns:
+        True if detection appears to be static (likely FP)
+    """
+    all_x_positions = []
+
+    for result in model_results.values():
+        for det in result.detections:
+            if det.category in INTERESTING_CATEGORIES and det.confidence >= min_confidence:
+                # bbox is [x, y, w, h] normalized
+                x_center = det.bbox[0] + det.bbox[2] / 2
+                all_x_positions.append(x_center)
+
+    if len(all_x_positions) < min_samples:
+        return False
+
+    x_variance = max(all_x_positions) - min(all_x_positions)
+    return x_variance < max_position_variance
+
+
+def check_bbox_size(
+    model_results: Dict[str, "ModelResult"],
+    min_confidence: float = 0.25,
+    min_width: float = 0.04,
+    min_height: float = 0.08,
+) -> bool:
+    """
+    Check if any detection has a reasonably sized bounding box.
+
+    Very small bounding boxes (< 4% width or < 8% height) are often
+    false positives from texture patterns, not real animals.
+
+    Args:
+        model_results: Dict of model name -> ModelResult
+        min_confidence: Minimum confidence to include detection
+        min_width: Minimum bbox width as fraction of frame (0.04 = 4%)
+        min_height: Minimum bbox height as fraction of frame (0.08 = 8%)
+
+    Returns:
+        True if at least one detection passes size threshold
+    """
+    for result in model_results.values():
+        for det in result.detections:
+            if det.category in INTERESTING_CATEGORIES and det.confidence >= min_confidence:
+                # bbox is [x, y, w, h] normalized
+                width = det.bbox[2]
+                height = det.bbox[3]
+                if width >= min_width and height >= min_height:
+                    return True
+
+    return False
+
+
+def check_model_agreement(
+    model_results: Dict[str, "ModelResult"],
+    min_confidence: float = 0.25,
+    min_models: int = 2,
+) -> bool:
+    """
+    Check if multiple models agree on detection (reduces single-model FPs).
+
+    Args:
+        model_results: Dict of model name -> ModelResult
+        min_confidence: Minimum confidence to count as detection
+        min_models: Minimum number of models that must detect something
+
+    Returns:
+        True if at least min_models detected something
+    """
+    detecting_models = 0
+
+    for result in model_results.values():
+        has_detection = any(
+            det.category in INTERESTING_CATEGORIES and det.confidence >= min_confidence
+            for det in result.detections
+        )
+        if has_detection:
+            detecting_models += 1
+
+    return detecting_models >= min_models
+
+
 def calculate_detection_timeline(
     model_results: Dict[str, "ModelResult"],
     fps: float = 15.0,
@@ -409,6 +508,36 @@ def parse_args() -> argparse.Namespace:
         "--disable-temporal-filter",
         action="store_true",
         help="Disable temporal consistency filter (promote on single detection)",
+    )
+    # FP reduction filters
+    parser.add_argument(
+        "--min-bbox-width",
+        type=float,
+        default=0.04,
+        help="Minimum bbox width as fraction of frame (default: 0.04 = 4%%)",
+    )
+    parser.add_argument(
+        "--min-bbox-height",
+        type=float,
+        default=0.08,
+        help="Minimum bbox height as fraction of frame (default: 0.08 = 8%%)",
+    )
+    parser.add_argument(
+        "--static-variance-threshold",
+        type=float,
+        default=0.02,
+        help="Max position variance before detection is rejected as static (default: 0.02)",
+    )
+    parser.add_argument(
+        "--require-model-agreement",
+        action="store_true",
+        help="Require multiple models to agree before promotion (reduces single-model FPs)",
+    )
+    parser.add_argument(
+        "--min-models-agree",
+        type=int,
+        default=2,
+        help="Minimum number of models that must agree (default: 2)",
     )
     return parser.parse_args()
 
@@ -782,9 +911,54 @@ def process_segment(
                 f"clustered detections within {args.max_frame_gap} frames)"
             )
 
+    # Check bbox size (filter tiny detections from texture patterns)
+    bbox_ok = True
+    if promoted_by and temporal_ok:
+        bbox_ok = check_bbox_size(
+            model_results,
+            min_confidence=args.event_threshold,
+            min_width=args.min_bbox_width,
+            min_height=args.min_bbox_height,
+        )
+        if not bbox_ok:
+            logging.info(
+                f"  Bbox filter: REJECTED (all detections < {args.min_bbox_width*100:.0f}%×{args.min_bbox_height*100:.0f}%)"
+            )
+
+    # Check for static detections (filter fixed scene features)
+    static_ok = True
+    if promoted_by and temporal_ok and bbox_ok:
+        is_static = is_static_detection(
+            model_results,
+            min_confidence=args.event_threshold,
+            max_position_variance=args.static_variance_threshold,
+            min_samples=5,
+        )
+        if is_static:
+            static_ok = False
+            logging.info(
+                f"  Static filter: REJECTED (position variance < {args.static_variance_threshold:.2f})"
+            )
+
+    # Check model agreement (filter single-model FPs)
+    agreement_ok = True
+    if args.require_model_agreement and promoted_by and temporal_ok and bbox_ok and static_ok:
+        agreement_ok = check_model_agreement(
+            model_results,
+            min_confidence=args.event_threshold,
+            min_models=args.min_models_agree,
+        )
+        if not agreement_ok:
+            logging.info(
+                f"  Agreement filter: REJECTED (< {args.min_models_agree} models agree)"
+            )
+
+    # Combined filter result
+    all_filters_pass = temporal_ok and bbox_ok and static_ok and agreement_ok
+
     # Calculate detection timeline
     detection_timeline = None
-    if promoted_by and temporal_ok:
+    if promoted_by and all_filters_pass:
         detection_timeline = calculate_detection_timeline(
             model_results,
             fps=15.0,  # Assuming 15fps video
@@ -797,8 +971,8 @@ def process_segment(
                 f"(peak @ {detection_timeline['peak_confidence']:.0%})"
             )
 
-    # Promote if any model found something interesting AND passes temporal filter
-    if promoted_by and temporal_ok:
+    # Promote if any model found something interesting AND passes all filters
+    if promoted_by and all_filters_pass:
         event_dir = promote_event(
             segment_path,
             args.segments_dir,
@@ -864,13 +1038,28 @@ def process_segment(
         det_dir = args.detections_dir / relative.parent / segment_path.stem
         det_dir.mkdir(parents=True, exist_ok=True)
 
-        # Determine rejection reason
+        # Determine rejection reason (check filters in order they were applied)
         max_conf = max(r.max_confidence for r in model_results.values())
         if promoted_by and not temporal_ok:
             rejection_reason = "temporal_filter"
             rejection_detail = (
                 f"Detection found but rejected: need {args.min_cluster_detections}+ "
                 f"clustered detections within {args.max_frame_gap} frames"
+            )
+        elif promoted_by and not bbox_ok:
+            rejection_reason = "bbox_size_filter"
+            rejection_detail = (
+                f"Detection rejected: bbox too small (< {args.min_bbox_width*100:.0f}%×{args.min_bbox_height*100:.0f}%)"
+            )
+        elif promoted_by and not static_ok:
+            rejection_reason = "static_detection_filter"
+            rejection_detail = (
+                f"Detection rejected: static position (variance < {args.static_variance_threshold:.2f})"
+            )
+        elif promoted_by and not agreement_ok:
+            rejection_reason = "model_agreement_filter"
+            rejection_detail = (
+                f"Detection rejected: < {args.min_models_agree} models agree"
             )
         else:
             rejection_reason = "below_threshold"
