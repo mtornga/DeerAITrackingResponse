@@ -347,6 +347,37 @@ def check_model_agreement(
     return detecting_models >= min_models
 
 
+def check_edge_exclusion(
+    model_results: Dict[str, "ModelResult"],
+    min_confidence: float = 0.25,
+    edge_margin: float = 0.05,
+) -> bool:
+    """
+    Check if any detection is NOT in the edge exclusion zone.
+
+    Detections at frame edges (especially corners) are often camera overlays,
+    timestamps, or IR artifacts rather than real animals.
+
+    Args:
+        model_results: Dict of model name -> ModelResult
+        min_confidence: Minimum confidence to include detection
+        edge_margin: Margin from edge to exclude (0.05 = 5% of frame)
+
+    Returns:
+        True if at least one detection is outside the edge exclusion zone
+    """
+    for result in model_results.values():
+        for det in result.detections:
+            if det.category in INTERESTING_CATEGORIES and det.confidence >= min_confidence:
+                # bbox is [x, y, w, h] normalized
+                x, y = det.bbox[0], det.bbox[1]
+                # Detection is valid if it's not touching the edge
+                if x >= edge_margin and y >= edge_margin:
+                    return True
+
+    return False
+
+
 def calculate_detection_timeline(
     model_results: Dict[str, "ModelResult"],
     fps: float = 15.0,
@@ -538,6 +569,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=2,
         help="Minimum number of models that must agree (default: 2)",
+    )
+    parser.add_argument(
+        "--edge-margin",
+        type=float,
+        default=0.05,
+        help="Edge exclusion margin as fraction of frame (default: 0.05 = 5%%)",
     )
     return parser.parse_args()
 
@@ -953,8 +990,21 @@ def process_segment(
                 f"  Agreement filter: REJECTED (< {args.min_models_agree} models agree)"
             )
 
+    # Check edge exclusion (filter corner/edge artifacts)
+    edge_ok = True
+    if promoted_by and temporal_ok and bbox_ok and static_ok and agreement_ok:
+        edge_ok = check_edge_exclusion(
+            model_results,
+            min_confidence=args.event_threshold,
+            edge_margin=args.edge_margin,
+        )
+        if not edge_ok:
+            logging.info(
+                f"  Edge filter: REJECTED (all detections within {args.edge_margin*100:.0f}% of frame edge)"
+            )
+
     # Combined filter result
-    all_filters_pass = temporal_ok and bbox_ok and static_ok and agreement_ok
+    all_filters_pass = temporal_ok and bbox_ok and static_ok and agreement_ok and edge_ok
 
     # Calculate detection timeline
     detection_timeline = None
@@ -1060,6 +1110,11 @@ def process_segment(
             rejection_reason = "model_agreement_filter"
             rejection_detail = (
                 f"Detection rejected: < {args.min_models_agree} models agree"
+            )
+        elif promoted_by and not edge_ok:
+            rejection_reason = "edge_exclusion_filter"
+            rejection_detail = (
+                f"Detection rejected: all detections within {args.edge_margin*100:.0f}% of frame edge"
             )
         else:
             rejection_reason = "below_threshold"

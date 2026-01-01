@@ -44,13 +44,14 @@ POLL_INTERVAL="${POLL_INTERVAL:-10}"             # seconds between detector chec
 ENABLE_ROUTING="${ENABLE_ROUTING:-true}"         # enable autonomous routing
 AUTO_ACCEPT_THRESHOLD="${AUTO_ACCEPT_THRESHOLD:-0.85}"  # min confidence for auto-accept
 DETECTOR_DEVICE="${DETECTOR_DEVICE:-cuda:0}"     # pytorch device (cuda:0 or cpu)
-MIN_CLUSTER_DETECTIONS="${DETECTOR_MIN_CLUSTER_DETECTIONS:-3}"  # temporal filter: min detections
+MIN_CLUSTER_DETECTIONS="${DETECTOR_MIN_CLUSTER_DETECTIONS:-4}"  # temporal filter: min detections (raised from 3)
 MAX_FRAME_GAP="${DETECTOR_MAX_FRAME_GAP:-30}"    # temporal filter: max gap between frames
 # FP reduction filters
 MIN_BBOX_WIDTH="${MIN_BBOX_WIDTH:-0.04}"         # min bbox width (4% of frame)
 MIN_BBOX_HEIGHT="${MIN_BBOX_HEIGHT:-0.08}"       # min bbox height (8% of frame)
 STATIC_VARIANCE="${STATIC_VARIANCE:-0.02}"       # max position variance for static filter
 REQUIRE_MODEL_AGREEMENT="${REQUIRE_MODEL_AGREEMENT:-false}"  # require both models to agree
+EDGE_MARGIN="${EDGE_MARGIN:-0.05}"               # edge exclusion margin (5% of frame)
 
 # Camera - default to REOLINK_3
 CAMERA_URL="${REOLINK_3_RTSP:-}"
@@ -173,6 +174,7 @@ start_pipeline() {
             --min-bbox-width ${MIN_BBOX_WIDTH} \\
             --min-bbox-height ${MIN_BBOX_HEIGHT} \\
             --static-variance-threshold ${STATIC_VARIANCE} \\
+            --edge-margin ${EDGE_MARGIN} \\
             ${routing_flags} \\
             --log-file '${LOG_DIR}/detector.log' \\
             2>&1 | tee -a '${LOG_DIR}/detector.log'
