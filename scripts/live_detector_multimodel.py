@@ -215,6 +215,7 @@ def has_temporal_consistency(
     min_detections: int = 3,
     max_frame_gap: int = 30,
     min_confidence: float = 0.25,
+    min_frame_span: int = 0,
 ) -> bool:
     """
     Check if detections cluster together (real animal walking through).
@@ -224,9 +225,10 @@ def has_temporal_consistency(
         min_detections: Minimum detections in a cluster
         max_frame_gap: Max frames between detections to be in same cluster
         min_confidence: Minimum confidence to count detection
+        min_frame_span: Minimum frame span for cluster (filters single-frame bugs)
 
     Returns:
-        True if there's a cluster with min_detections
+        True if there's a cluster with min_detections spanning min_frame_span
     """
     # Collect all interesting hits from all models
     all_hits = []
@@ -240,10 +242,17 @@ def has_temporal_consistency(
 
     clusters = find_detection_clusters(all_hits, max_frame_gap)
 
-    # Check if any cluster has enough detections
+    # Check if any cluster has enough detections AND sufficient frame span
     for cluster in clusters:
         if len(cluster) >= min_detections:
-            return True
+            # Check frame span if required
+            if min_frame_span > 0:
+                frames = [parse_frame_number(h.get("frame", "frame_0")) for h in cluster]
+                frame_span = max(frames) - min(frames)
+                if frame_span >= min_frame_span:
+                    return True
+            else:
+                return True
 
     return False
 
@@ -534,6 +543,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=30,
         help="Maximum frames between detections to be in same cluster (default: 30)",
+    )
+    parser.add_argument(
+        "--min-frame-span",
+        type=int,
+        default=45,
+        help="Minimum frame span for detection cluster - filters bug flashes (default: 45 = ~3s)",
     )
     parser.add_argument(
         "--disable-temporal-filter",
@@ -933,7 +948,7 @@ def process_segment(
         routing_result = route_detection(model_dicts, routing_config)
         logging.info(f"  Routing: {routing_result.decision.value} ({routing_result.reason})")
 
-    # Check temporal consistency (filter single-frame noise)
+    # Check temporal consistency (filter single-frame noise and bug flashes)
     temporal_ok = True
     if not args.disable_temporal_filter and promoted_by:
         temporal_ok = has_temporal_consistency(
@@ -941,11 +956,12 @@ def process_segment(
             min_detections=args.min_cluster_detections,
             max_frame_gap=args.max_frame_gap,
             min_confidence=args.event_threshold,
+            min_frame_span=args.min_frame_span,
         )
         if not temporal_ok:
             logging.info(
                 f"  Temporal filter: REJECTED (need {args.min_cluster_detections}+ "
-                f"clustered detections within {args.max_frame_gap} frames)"
+                f"detections spanning {args.min_frame_span}+ frames)"
             )
 
     # Check bbox size (filter tiny detections from texture patterns)
@@ -1094,7 +1110,7 @@ def process_segment(
             rejection_reason = "temporal_filter"
             rejection_detail = (
                 f"Detection found but rejected: need {args.min_cluster_detections}+ "
-                f"clustered detections within {args.max_frame_gap} frames"
+                f"detections spanning {args.min_frame_span}+ frames"
             )
         elif promoted_by and not bbox_ok:
             rejection_reason = "bbox_size_filter"

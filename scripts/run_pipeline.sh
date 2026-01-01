@@ -44,8 +44,9 @@ POLL_INTERVAL="${POLL_INTERVAL:-10}"             # seconds between detector chec
 ENABLE_ROUTING="${ENABLE_ROUTING:-true}"         # enable autonomous routing
 AUTO_ACCEPT_THRESHOLD="${AUTO_ACCEPT_THRESHOLD:-0.85}"  # min confidence for auto-accept
 DETECTOR_DEVICE="${DETECTOR_DEVICE:-cuda:0}"     # pytorch device (cuda:0 or cpu)
-MIN_CLUSTER_DETECTIONS="${DETECTOR_MIN_CLUSTER_DETECTIONS:-4}"  # temporal filter: min detections (raised from 3)
+MIN_CLUSTER_DETECTIONS="${DETECTOR_MIN_CLUSTER_DETECTIONS:-6}"  # temporal filter: min detections (raised to 6 for bug filtering)
 MAX_FRAME_GAP="${DETECTOR_MAX_FRAME_GAP:-30}"    # temporal filter: max gap between frames
+MIN_FRAME_SPAN="${DETECTOR_MIN_FRAME_SPAN:-45}"  # temporal filter: min frame span (~3s at 15fps)
 # FP reduction filters
 MIN_BBOX_WIDTH="${MIN_BBOX_WIDTH:-0.04}"         # min bbox width (4% of frame)
 MIN_BBOX_HEIGHT="${MIN_BBOX_HEIGHT:-0.08}"       # min bbox height (8% of frame)
@@ -171,6 +172,7 @@ start_pipeline() {
             --device ${DETECTOR_DEVICE} \\
             --min-cluster-detections ${MIN_CLUSTER_DETECTIONS} \\
             --max-frame-gap ${MAX_FRAME_GAP} \\
+            --min-frame-span ${MIN_FRAME_SPAN} \\
             --min-bbox-width ${MIN_BBOX_WIDTH} \\
             --min-bbox-height ${MIN_BBOX_HEIGHT} \\
             --static-variance-threshold ${STATIC_VARIANCE} \\
