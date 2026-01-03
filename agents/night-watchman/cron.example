@@ -1,0 +1,26 @@
+# Night Watchman Agent - Cron Configuration
+#
+# Schedule: 1am Central Time daily
+# Central Time is UTC-6, so 1am CT = 7am UTC
+#
+# To install on Ubuntu server:
+#   1. Copy this file or edit crontab directly:
+#      crontab -e
+#
+#   2. Add the cron entry below
+#
+#   3. Verify it's installed:
+#      crontab -l
+#
+# Log file will be at /var/log/night-watchman.log
+# Make sure the log directory is writable or change the path
+#
+
+# Night Watchman - 1am Central (7am UTC) daily
+0 7 * * * /home/mtornga/projects/DeerAITrackingResponse/agents/night-watchman/run.sh >> /var/log/night-watchman.log 2>&1
+
+# Alternative: Log to project directory instead of /var/log
+# 0 7 * * * /home/mtornga/projects/DeerAITrackingResponse/agents/night-watchman/run.sh >> /home/mtornga/projects/DeerAITrackingResponse/runs/logs/watchman/cron.log 2>&1
+
+# For testing: Run every 5 minutes (comment out when done testing)
+# */5 * * * * /home/mtornga/projects/DeerAITrackingResponse/agents/night-watchman/run.sh --dry-run >> /tmp/night-watchman-test.log 2>&1
