@@ -4,7 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a wildlife management platform for tracking and deterring deer and other animals on private property, inspired by the University of Minnesota's GUARD paper. The system implements a full spatial intelligence pipeline: Detection → Tracking → Localization → Behavior Analysis → Trajectory Forecasting.
+This is a wildlife management platform for tracking and deterring deer and other animals on private property, inspired by the University of Minnesota's GUARD paper.
+
+**Location**: St. Louis, Missouri (Central Time, UTC-6)
+- Sunset ~4:50 PM in early January
+- Server runs on UTC; local time = UTC - 6 hours
+
+The system implements a full spatial intelligence pipeline: Detection → Tracking → Localization → Behavior Analysis → Trajectory Forecasting.
 
 The project has two parallel environments:
 1. **Indoor tabletop simulation**: 24"×30" table with Wyze v2 + Reolink E1 cameras, test objects, and a CuteBot UGV for rapid iteration

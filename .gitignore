@@ -37,6 +37,7 @@ runs/
 tmp/
 external/
 models/
+mcp_agent_mail/
 TableTopSimulation/
 cutebot/
 cvat-indoor/
