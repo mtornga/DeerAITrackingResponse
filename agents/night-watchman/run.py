@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timedelta
@@ -23,7 +24,8 @@ from typing import Optional
 from zoneinfo import ZoneInfo
 
 # Configuration
-AGENT_NAME = "night-watchman"
+# Agent Mail enforces adjective-noun identities; CalmEagle is the registered Night Watchman handle.
+AGENT_NAME = "CalmEagle"
 AGENT_MAIL_URL = "http://192.168.68.71:8765/mail"
 REVIEW_UI_URL = "http://192.168.68.71:8501/"
 THREAD_ID = "NIGHT-WATCHMAN"
@@ -31,6 +33,43 @@ TIMEZONE = ZoneInfo("America/Chicago")
 
 # Default review window start: 3pm Central previous day
 DEFAULT_REVIEW_START_HOUR = 15
+
+
+def _resolve_command_path(candidate: str) -> Optional[str]:
+    """Return an executable path if candidate resolves."""
+    if not candidate:
+        return None
+    expanded = os.path.expanduser(candidate)
+    candidate_path = Path(expanded)
+    if candidate_path.is_file() and os.access(candidate_path, os.X_OK):
+        return str(candidate_path)
+    return shutil.which(expanded)
+
+
+def discover_claude_binary() -> Optional[str]:
+    """
+    Find the claude CLI, preferring CLAUDE_BIN env, then PATH, then ~/.nvm installs.
+    """
+    candidates: list[str] = []
+    env_candidate = os.environ.get("CLAUDE_BIN")
+    if env_candidate:
+        candidates.append(env_candidate)
+    candidates.append("claude")
+
+    nvm_root = Path.home() / ".nvm" / "versions" / "node"
+    if nvm_root.exists():
+        for cli_path in sorted(nvm_root.glob("*/bin/claude"), reverse=True):
+            candidates.append(str(cli_path))
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        resolved = _resolve_command_path(candidate)
+        if resolved:
+            return resolved
+    return None
 
 
 def get_repo_root() -> Path:
@@ -133,9 +172,13 @@ def run_claude_code(prompt: str, dry_run: bool = False) -> int:
     Returns the exit code from Claude Code.
     """
     repo_root = get_repo_root()
+    claude_binary = discover_claude_binary()
+    if not claude_binary:
+        print("ERROR: Could not locate the 'claude' CLI. Install it or set CLAUDE_BIN to its path.")
+        return 1
 
     cmd = [
-        "claude",
+        claude_binary,
         "-p", prompt,
         "--allowedTools", "Read,Glob,Grep,Bash,WebFetch",
         "--output-format", "text",
@@ -151,6 +194,7 @@ def run_claude_code(prompt: str, dry_run: bool = False) -> int:
 
     if dry_run:
         print("DRY RUN - would execute:")
+        print(f"  Claude CLI: {claude_binary}")
         print(f"  Command: {' '.join(cmd)}")
         print(f"  Working directory: {repo_root}")
         print(f"  Environment additions:")
