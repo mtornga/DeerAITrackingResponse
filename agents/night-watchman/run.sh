@@ -10,9 +10,16 @@
 # Usage:
 #   ./agents/night-watchman/run.sh
 #   ./agents/night-watchman/run.sh --dry-run
+#   ./agents/night-watchman/run.sh --verbose
 #
 # Cron example (1am Central = 7am UTC):
 #   0 7 * * * /home/mtornga/projects/DeerAITrackingResponse/agents/night-watchman/run.sh >> /var/log/night-watchman.log 2>&1
+#
+# Environment variables:
+#   REPO_DIR      - Repository directory (default: /home/mtornga/projects/DeerAITrackingResponse)
+#   VENV_DIR      - Virtual environment directory (default: ${REPO_DIR}/.venv)
+#   LOG_DIR       - Log output directory (default: ${REPO_DIR}/runs/logs/watchman)
+#   SHELL_TIMEOUT - Shell-level timeout in seconds (default: 4200 = 70 min, safety margin over Python's 60 min)
 #
 
 set -euo pipefail
@@ -21,6 +28,7 @@ set -euo pipefail
 REPO_DIR="${REPO_DIR:-/home/mtornga/projects/DeerAITrackingResponse}"
 VENV_DIR="${VENV_DIR:-${REPO_DIR}/.venv}"
 LOG_DIR="${LOG_DIR:-${REPO_DIR}/runs/logs/watchman}"
+SHELL_TIMEOUT="${SHELL_TIMEOUT:-4200}"  # 70 minutes (safety margin over Python's 60 min default)
 
 resolve_claude_bin() {
     local candidate=""
@@ -87,10 +95,24 @@ fi
 # Verify Claude Code is available
 # claude should now be resolvable; provide a helpful log line
 echo "Using claude CLI at ${CLAUDE_BIN_PATH}"
+echo "Shell timeout: ${SHELL_TIMEOUT}s"
 
-# Run the agent
-python agents/night-watchman/run.py "$@"
-exit_code=$?
+# Run the agent with shell-level timeout as safety net
+# The Python script has its own timeout (default 3600s), but this provides defense in depth
+if command -v timeout >/dev/null 2>&1; then
+    timeout "${SHELL_TIMEOUT}" python agents/night-watchman/run.py "$@"
+    exit_code=$?
+    if [[ ${exit_code} -eq 124 ]]; then
+        echo "========================================"
+        echo "ERROR: Shell-level timeout (${SHELL_TIMEOUT}s) exceeded!"
+        echo "The Python process was killed. This is a safety backstop."
+        echo "========================================"
+    fi
+else
+    echo "WARNING: 'timeout' command not available, running without shell-level timeout"
+    python agents/night-watchman/run.py "$@"
+    exit_code=$?
+fi
 
 # Log completion
 echo "========================================"

@@ -8,6 +8,16 @@ Scheduled to run at 1am Central Time daily via cron.
 Usage:
     python agents/night-watchman/run.py
     python agents/night-watchman/run.py --dry-run
+    python agents/night-watchman/run.py --verbose
+    python agents/night-watchman/run.py --timeout 1800 --verbose
+
+Options:
+    --dry-run           Print what would be executed without running
+    --verbose, -v       Enable verbose debug logging (timing, commands, env vars)
+    --timeout SECS      Timeout for Claude Code execution (default: 300 for v2, 3600 for v1)
+    --start-time TIME   Override review window start (format: YYYY-MM-DD HH:MM)
+    --skip-health-check Skip Agent Mail pre-flight connectivity check
+    --skill VERSION     Skill version to use: v1 (full) or v2 (MCP smoke test, default)
 """
 
 from __future__ import annotations
@@ -18,10 +28,21 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 from zoneinfo import ZoneInfo
+
+# Global verbose flag (set via --verbose CLI arg)
+VERBOSE = False
+
+
+def log_verbose(msg: str) -> None:
+    """Print message only if verbose mode is enabled."""
+    if VERBOSE:
+        timestamp = datetime.now(TIMEZONE).strftime("%H:%M:%S")
+        print(f"[DEBUG {timestamp}] {msg}")
 
 # Configuration
 # Agent Mail enforces adjective-noun identities; CalmEagle is the registered Night Watchman handle.
@@ -141,16 +162,80 @@ def query_day_watchman_last_review(agent_mail_url: str) -> Optional[datetime]:
                         return dt.astimezone(TIMEZONE)
     except Exception as e:
         print(f"Warning: Could not query Agent Mail: {e}")
+        log_verbose(f"Exception type: {type(e).__name__}, details: {e}")
 
     return None
 
 
-def build_prompt(review_start: datetime, review_end: datetime) -> str:
+def check_agent_mail_health(agent_mail_url: str, timeout: float = 5.0) -> bool:
+    """
+    Pre-flight health check for Agent Mail server.
+
+    Returns True if server is reachable, False otherwise.
+    """
+    try:
+        import httpx
+    except ImportError:
+        print("Warning: httpx not installed, skipping Agent Mail health check")
+        return True  # Proceed anyway if httpx not available
+
+    # Try the base URL or a health endpoint
+    base_url = agent_mail_url.rstrip("/mail").rstrip("/")
+    health_url = f"{base_url}/health"
+
+    log_verbose(f"Checking Agent Mail health at {health_url}")
+
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            # Try health endpoint first
+            try:
+                response = client.get(health_url)
+                log_verbose(f"Health endpoint response: {response.status_code}")
+                if response.status_code == 200:
+                    return True
+            except httpx.HTTPError:
+                pass
+
+            # Fall back to base mail endpoint
+            log_verbose(f"Trying base endpoint: {agent_mail_url}")
+            response = client.get(agent_mail_url)
+            log_verbose(f"Base endpoint response: {response.status_code}")
+            return response.status_code in (200, 404, 405)  # 404/405 means server is up
+
+    except httpx.ConnectError as e:
+        print(f"ERROR: Cannot connect to Agent Mail at {base_url}")
+        log_verbose(f"Connection error: {e}")
+        return False
+    except httpx.TimeoutException as e:
+        print(f"ERROR: Agent Mail at {base_url} timed out after {timeout}s")
+        log_verbose(f"Timeout error: {e}")
+        return False
+    except Exception as e:
+        print(f"ERROR: Agent Mail health check failed: {e}")
+        log_verbose(f"Exception type: {type(e).__name__}")
+        return False
+
+
+def build_prompt(review_start: datetime, review_end: datetime, skill_version: str = "v2") -> str:
     """Build the prompt for Claude Code."""
     repo_root = get_repo_root()
-    skill_path = repo_root / "agents" / "night-watchman" / "SKILL.md"
 
-    return f"""Execute the night-watchman skill.
+    if skill_version == "v2":
+        # Simplified MCP smoke test
+        skill_path = repo_root / "agents" / "night-watchman" / "SKILL_v2.md"
+        return f"""Execute the night-watchman-v2 skill (MCP smoke test).
+
+**Your Identity**: CalmEagle
+**Project Key**: {repo_root}
+**Current Time**: {review_end.strftime('%Y-%m-%d %H:%M')} CT
+
+**Instructions**: Read and follow the instructions in {skill_path}
+
+Complete all 4 steps: register, send message, check inbox, acknowledge."""
+    else:
+        # Full v1 skill
+        skill_path = repo_root / "agents" / "night-watchman" / "SKILL.md"
+        return f"""Execute the night-watchman skill.
 
 **Review Window**: {review_start.strftime('%Y-%m-%d %H:%M')} CT to {review_end.strftime('%Y-%m-%d %H:%M')} CT
 
@@ -165,9 +250,20 @@ def build_prompt(review_start: datetime, review_end: datetime) -> str:
 Begin your patrol now. Start with the system health check, then pipeline health, then review detections from the review window."""
 
 
-def run_claude_code(prompt: str, dry_run: bool = False) -> int:
+def run_claude_code(
+    prompt: str,
+    dry_run: bool = False,
+    timeout_seconds: int = 3600,
+    skill_version: str = "v2"
+) -> int:
     """
     Invoke Claude Code in headless mode.
+
+    Args:
+        prompt: The prompt to send to Claude Code
+        dry_run: If True, print command without executing
+        timeout_seconds: Maximum time to wait for Claude Code (default: 1 hour)
+        skill_version: Which skill version to run (v1 or v2)
 
     Returns the exit code from Claude Code.
     """
@@ -177,35 +273,59 @@ def run_claude_code(prompt: str, dry_run: bool = False) -> int:
         print("ERROR: Could not locate the 'claude' CLI. Install it or set CLAUDE_BIN to its path.")
         return 1
 
+    log_verbose(f"Found claude binary: {claude_binary}")
+
+    # Different allowed tools for different skill versions
+    if skill_version == "v2":
+        # v2 skill - MCP Agent Mail + Bash for system checks + Write for digest
+        allowed_tools = "Read,Write,Bash,mcp__mcp-agent-mail__*"
+    else:
+        # Full v1 skill needs more tools
+        allowed_tools = "Read,Glob,Grep,Bash,WebFetch"
+
+    log_verbose(f"Skill version: {skill_version}, allowed tools: {allowed_tools}")
+
     cmd = [
         claude_binary,
         "-p", prompt,
-        "--allowedTools", "Read,Glob,Grep,Bash,WebFetch",
+        "--allowedTools", allowed_tools,
         "--output-format", "text",
     ]
 
     env = os.environ.copy()
-    env.update({
+    env_additions = {
         "AGENT_MAIL_PROJECT": str(repo_root),
         "AGENT_MAIL_AGENT": AGENT_NAME,
         "AGENT_MAIL_URL": AGENT_MAIL_URL,
         "REVIEW_UI_URL": REVIEW_UI_URL,
-    })
+    }
+    env.update(env_additions)
 
     if dry_run:
         print("DRY RUN - would execute:")
         print(f"  Claude CLI: {claude_binary}")
         print(f"  Command: {' '.join(cmd)}")
         print(f"  Working directory: {repo_root}")
+        print(f"  Timeout: {timeout_seconds}s")
         print(f"  Environment additions:")
-        for key in ["AGENT_MAIL_PROJECT", "AGENT_MAIL_AGENT", "AGENT_MAIL_URL", "REVIEW_UI_URL"]:
-            print(f"    {key}={env[key]}")
+        for key, value in env_additions.items():
+            print(f"    {key}={value}")
         print(f"\nPrompt:\n{prompt}")
         return 0
 
     print(f"Starting Night Watchman at {datetime.now(TIMEZONE)}")
     print(f"Working directory: {repo_root}")
+    print(f"Timeout: {timeout_seconds}s ({timeout_seconds // 60} minutes)")
     print("-" * 60)
+
+    # Verbose logging of full command and environment
+    log_verbose(f"Full command: {' '.join(cmd)}")
+    log_verbose(f"Environment additions:")
+    for key, value in env_additions.items():
+        log_verbose(f"  {key}={value}")
+
+    start_time = time.time()
+    log_verbose(f"Subprocess starting at {datetime.now(TIMEZONE).isoformat()}")
 
     try:
         result = subprocess.run(
@@ -214,13 +334,26 @@ def run_claude_code(prompt: str, dry_run: bool = False) -> int:
             env=env,
             capture_output=False,  # Let output stream to console
             text=True,
+            timeout=timeout_seconds,
         )
+        elapsed = time.time() - start_time
+        log_verbose(f"Subprocess completed in {elapsed:.1f}s with exit code {result.returncode}")
+        print(f"\nClaude Code exited with code {result.returncode} after {elapsed:.1f}s")
         return result.returncode
+    except subprocess.TimeoutExpired:
+        elapsed = time.time() - start_time
+        print(f"\nERROR: Claude Code timed out after {elapsed:.1f}s (limit: {timeout_seconds}s)")
+        print("The process was killed. Check if Agent Mail or MCP connections are hanging.")
+        log_verbose("TimeoutExpired exception caught")
+        return 124  # Standard timeout exit code
     except FileNotFoundError:
         print("ERROR: 'claude' command not found. Is Claude Code installed?")
+        log_verbose(f"FileNotFoundError for command: {cmd[0]}")
         return 1
     except Exception as e:
-        print(f"ERROR: Failed to run Claude Code: {e}")
+        elapsed = time.time() - start_time
+        print(f"ERROR: Failed to run Claude Code after {elapsed:.1f}s: {e}")
+        log_verbose(f"Exception type: {type(e).__name__}, details: {e}")
         return 1
 
 
@@ -264,6 +397,8 @@ Digest: {digest_path}
 
 
 def main():
+    global VERBOSE
+
     parser = argparse.ArgumentParser(description="Night Watchman Agent Runner")
     parser.add_argument(
         "--dry-run",
@@ -271,11 +406,58 @@ def main():
         help="Print what would be executed without running",
     )
     parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Enable verbose debug logging",
+    )
+    parser.add_argument(
         "--start-time",
         type=str,
         help="Override review window start (format: YYYY-MM-DD HH:MM)",
     )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=3600,
+        help="Timeout in seconds for Claude Code execution (default: 3600)",
+    )
+    parser.add_argument(
+        "--skip-health-check",
+        action="store_true",
+        help="Skip Agent Mail pre-flight health check",
+    )
+    parser.add_argument(
+        "--skill",
+        type=str,
+        choices=["v1", "v2"],
+        default="v2",
+        help="Skill version: v1 (full patrol) or v2 (MCP smoke test, default)",
+    )
     args = parser.parse_args()
+
+    # Set default timeout based on skill version if not explicitly specified
+    if args.timeout == 3600 and args.skill == "v2":
+        args.timeout = 300  # 5 minutes for v2 smoke test
+
+    # Set global verbose flag
+    VERBOSE = args.verbose
+    if VERBOSE:
+        print("[DEBUG] Verbose logging enabled")
+
+    # Pre-flight health check for Agent Mail
+    if not args.skip_health_check and not args.dry_run:
+        print("Checking Agent Mail connectivity...")
+        log_verbose(f"Agent Mail URL: {AGENT_MAIL_URL}")
+        if not check_agent_mail_health(AGENT_MAIL_URL):
+            print("=" * 60)
+            print("FATAL: Agent Mail is not reachable. Cannot proceed.")
+            print("Options:")
+            print("  1. Start the Agent Mail server on 192.168.68.71:8765")
+            print("  2. Run with --skip-health-check to bypass this check")
+            print("=" * 60)
+            sys.exit(1)
+        print("Agent Mail: OK")
+        log_verbose("Agent Mail health check passed")
 
     # Determine review window
     now = datetime.now(TIMEZONE)
@@ -290,13 +472,19 @@ def main():
     review_end = now
     review_window_str = f"{review_start.strftime('%Y-%m-%d %H:%M')} to {review_end.strftime('%Y-%m-%d %H:%M')} CT"
 
-    print(f"Night Watchman Agent Runner")
+    print(f"Night Watchman Agent Runner (skill: {args.skill})")
     print(f"Review window: {review_window_str}")
     print("=" * 60)
 
     # Build prompt and run
-    prompt = build_prompt(review_start, review_end)
-    exit_code = run_claude_code(prompt, dry_run=args.dry_run)
+    prompt = build_prompt(review_start, review_end, skill_version=args.skill)
+    log_verbose(f"Prompt length: {len(prompt)} chars")
+    exit_code = run_claude_code(
+        prompt,
+        dry_run=args.dry_run,
+        timeout_seconds=args.timeout,
+        skill_version=args.skill
+    )
 
     if not args.dry_run:
         # Send completion notification
