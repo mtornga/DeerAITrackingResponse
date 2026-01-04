@@ -392,10 +392,15 @@ def run_health_check(
             summary="FAIL: ground_truth.json not found",
         )
 
-    # Determine models to test
+    # Determine models to test based on lighting mode
     if model_names is None:
-        # Default: test wildlife v7 day models
-        model_names = ["yolov8n_wildlife_v7_day.pt", "rtdetr_wildlife_v7_day.pt"]
+        if lighting == "night":
+            # Night mode: use night-trained models for IR footage
+            model_names = ["yolov8n_wildlife_v7_night.pt"]
+            # Note: rtdetr_wildlife_v7_night.pt pending on RunPod
+        else:
+            # Day mode (default): use day-trained models
+            model_names = ["yolov8n_wildlife_v7_day.pt", "rtdetr_wildlife_v7_day.pt"]
 
     model_paths = []
     for name in model_names:
