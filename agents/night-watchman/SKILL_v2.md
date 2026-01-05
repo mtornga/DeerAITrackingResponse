@@ -49,11 +49,11 @@ Save this status for your patrol report.
 
 ## Step 3: Detection Summary
 
-Check for detection events from the past day:
+Check for detection events from the past day on the shared storage:
 
 ```bash
-ls -la /home/mtornga/projects/DeerAITrackingResponse/runs/live/events/$(date +%Y-%m-%d)/ 2>/dev/null || echo "No events today"
-ls -la /home/mtornga/projects/DeerAITrackingResponse/runs/live/events/$(date -d yesterday +%Y-%m-%d)/ 2>/dev/null || echo "No events yesterday"
+ls -la /srv/deer-share/runs/live/events/$(date +%Y-%m-%d)/ 2>/dev/null || echo "No events today"
+ls -la /srv/deer-share/runs/live/events/$(date -d yesterday +%Y-%m-%d)/ 2>/dev/null || echo "No events yesterday"
 ```
 
 If events exist, count them and note the total. If any meta.json files exist, read the first few to check max_confidence values.
