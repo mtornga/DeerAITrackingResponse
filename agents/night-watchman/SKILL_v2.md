@@ -1,6 +1,6 @@
 ---
 name: night-watchman-v2
-description: "Night Watchman patrol with progress reporting"
+description: "Night Watchman patrol with backlog diagnosis and frame examination"
 license: MIT
 metadata:
   schedule: "0 7 * * *"
@@ -8,7 +8,7 @@ metadata:
 allowed-tools: "mcp__mcp-agent-mail__*,Read,Bash,Write"
 ---
 
-# Night Watchman Agent (v2.8)
+# Night Watchman Agent (v2.10)
 
 You are **CalmEagle**, the Night Watchman patrol agent.
 
@@ -56,6 +56,83 @@ Note results: Disk OK/WARNING/CRITICAL, Pipeline HEALTHY/UNHEALTHY.
 
 ---
 
+## Step 1.5: Backlog Check & Diagnosis
+
+Send progress:
+**Tool**: `mcp__mcp-agent-mail__send_message`
+- subject: "Step 1.5: Backlog Check"
+- body_md: "Checking analysis backlog..."
+- thread_id: "NIGHT-WATCHMAN"
+
+Run backlog count and threshold check:
+```bash
+BACKLOG_DIR="/srv/deer-share/runs/live/analysis"
+BACKLOG_COUNT=$(find "$BACKLOG_DIR" -name "*.mkv" 2>/dev/null | wc -l | tr -d ' ')
+
+echo "=== BACKLOG STATUS ==="
+echo "Count: $BACKLOG_COUNT clips"
+
+if [ "$BACKLOG_COUNT" -le 50 ]; then
+  echo "Status: ✅ OK"
+elif [ "$BACKLOG_COUNT" -le 100 ]; then
+  echo "Status: ⚠️ WARNING (above 50)"
+elif [ "$BACKLOG_COUNT" -le 500 ]; then
+  echo "Status: 🔴 HIGH (above 100) - running diagnosis"
+else
+  echo "Status: 🔴 CRITICAL (above 500) - running diagnosis"
+fi
+```
+
+**IF backlog > 100**, run diagnosis:
+```bash
+echo ""
+echo "=== BACKLOG DIAGNOSIS ==="
+
+# 1. Is detector running?
+if pgrep -f "live_detector" > /dev/null; then
+  DETECTOR_PID=$(pgrep -f "live_detector" | head -1)
+  echo "Detector: RUNNING (PID $DETECTOR_PID)"
+else
+  echo "Detector: ⚠️ NOT RUNNING"
+fi
+
+# 2. Oldest clip age
+OLDEST=$(find /srv/deer-share/runs/live/analysis -name "*.mkv" -type f -printf '%T+ %p\n' 2>/dev/null | sort | head -1)
+if [ -n "$OLDEST" ]; then
+  echo "Oldest clip: $OLDEST"
+else
+  echo "Oldest clip: (none found)"
+fi
+
+# 3. Count unprocessed (no detection JSON)
+ANALYSIS_COUNT=$(find /srv/deer-share/runs/live/analysis -name "*.mkv" 2>/dev/null | wc -l | tr -d ' ')
+DETECTION_COUNT=$(find /srv/deer-share/runs/live/detections -name "*.json" 2>/dev/null | wc -l | tr -d ' ')
+UNPROCESSED=$((ANALYSIS_COUNT - DETECTION_COUNT))
+echo "Unprocessed (no detection): $UNPROCESSED clips"
+
+# 4. Check prune history
+if [ -f /srv/deer-share/logs/prune_events.log ]; then
+  LAST_PRUNE=$(stat -c %y /srv/deer-share/logs/prune_events.log 2>/dev/null || stat -f "%Sm" /srv/deer-share/logs/prune_events.log 2>/dev/null)
+  echo "Last prune run: $LAST_PRUNE"
+else
+  echo "Prune log: ⚠️ NOT FOUND (prune_events.py may have never run)"
+fi
+
+echo ""
+echo "=== PROPOSED FIX ==="
+if ! pgrep -f "live_detector" > /dev/null; then
+  echo "1. Restart detector: cd ~/projects/DeerAITrackingResponse && source .venv/bin/activate && python scripts/live_detector_multimodel.py --daemon"
+fi
+if [ "$UNPROCESSED" -gt 100 ]; then
+  echo "2. Run manual prune: python scripts/prune_segments_without_events.py --dry-run"
+fi
+echo "3. Verify cron is scheduling prune_events.py"
+```
+
+Note backlog status (OK/WARNING/HIGH/CRITICAL) and diagnosis results for digest.
+
+---
+
 ## Step 2: Detection Summary
 
 Send progress:
@@ -83,13 +160,92 @@ for DATE in $TODAY $YESTERDAY; do
     echo "--- $DATE: none ---"
   fi
 done
-
-echo ""
-echo "=== BACKLOG ==="
-find /srv/deer-share/runs/live/analysis -name "*.mkv" 2>/dev/null | wc -l
 ```
 
-Note: event counts, highest confidence segment, backlog count.
+Note: event counts, highest confidence segment.
+
+---
+
+## Step 2.5: Frame Examination
+
+Send progress:
+**Tool**: `mcp__mcp-agent-mail__send_message`
+- subject: "Step 2.5: Frame Examination"
+- body_md: "Analyzing highest-confidence detection metadata..."
+- thread_id: "NIGHT-WATCHMAN"
+
+Analyze the highest-confidence segment from Step 2. Run:
+```bash
+EVENTS_DIR="/srv/deer-share/runs/live/events"
+TODAY=$(date +%Y-%m-%d)
+YESTERDAY=$(date -d "yesterday" +%Y-%m-%d 2>/dev/null || date -v-1d +%Y-%m-%d)
+
+# Find highest confidence segment
+BEST_SEG=""
+BEST_CONF=0
+for DATE in $TODAY $YESTERDAY; do
+  DIR="$EVENTS_DIR/$DATE"
+  [ -d "$DIR" ] || continue
+  for SEG in "$DIR"/segment_*; do
+    [ -f "$SEG/meta.json" ] || continue
+    CONF=$(jq -r '.max_confidence // 0' "$SEG/meta.json" 2>/dev/null)
+    if [ $(echo "$CONF > $BEST_CONF" | bc -l) -eq 1 ]; then
+      BEST_CONF=$CONF
+      BEST_SEG=$SEG
+    fi
+  done
+done
+
+if [ -n "$BEST_SEG" ]; then
+  echo "=== FRAME EXAMINATION ==="
+  echo "Segment: $(basename $BEST_SEG)"
+  echo "Confidence: $(echo "$BEST_CONF * 100" | bc)%"
+
+  # Detection timeline
+  jq -r '.detection_timeline | "Timeline: frames \(.first_frame // "?")-\(.last_frame // "?") (\(.duration // "?")s duration)"' "$BEST_SEG/meta.json" 2>/dev/null
+
+  # Bbox analysis for movement detection - output structured for easy parsing
+  jq -r '
+    [.models[].hits[] | select(.bbox != null)] as $hits |
+    if ($hits | length) > 0 then
+      ($hits | map(.bbox[0]) | add / length) as $avg_x |
+      ($hits | map(.bbox[0] - $avg_x | . * .) | add / length | sqrt) as $x_std |
+      ($hits | map(.bbox[2] * .bbox[3]) | add / length) as $avg_size |
+      "Movement: x_std=\($x_std | . * 1000 | floor / 1000), avg_x=\($avg_x * 100 | floor)%, avg_size=\($avg_size * 100 | floor / 100)%"
+    else
+      "Movement: no bbox hits found"
+    end
+  ' "$BEST_SEG/meta.json" 2>/dev/null
+
+  # Assessment logic - clear emoji-prefixed verdict
+  jq -r '
+    [.models[].hits[] | select(.bbox != null)] as $hits |
+    if ($hits | length) == 0 then
+      "Assessment: ⚠️ No detection hits to analyze"
+    else
+      ($hits | map(.bbox[0]) | add / length) as $avg_x |
+      ($hits | map(.bbox[0] - $avg_x | . * .) | add / length | sqrt) as $x_std |
+      ($hits | map(.bbox[2] * .bbox[3]) | add / length) as $avg_size |
+      (.detection_timeline.duration // 0) as $duration |
+
+      if $x_std < 0.02 and ($avg_x < 0.15 or $avg_x > 0.85) then
+        "Assessment: ⚠️ Possible AprilTag false positive - static at edge"
+      elif $avg_size < 0.03 and $x_std < 0.02 then
+        "Assessment: ⚠️ Possible false positive - small static object"
+      elif $x_std > 0.05 or $duration > 2 then
+        "Assessment: ✅ Likely real animal - shows movement"
+      else
+        "Assessment: 🔍 Inconclusive - moderate movement"
+      end
+    end
+  ' "$BEST_SEG/meta.json" 2>/dev/null
+else
+  echo "=== FRAME EXAMINATION ==="
+  echo "No events found to examine"
+fi
+```
+
+**IMPORTANT**: You MUST include the FRAME EXAMINATION output (Segment, Timeline, Movement, Assessment) in BOTH the digest AND final Agent Mail report. Copy the exact values from above.
 
 ---
 
@@ -150,14 +306,27 @@ Use Write tool to create `/home/mtornga/projects/DeerAITrackingResponse/runs/log
 **Agent**: CalmEagle | **Time**: [CT timestamp]
 
 ## Health
-- Disk: [OK/WARNING/CRITICAL]
+- Disk: [OK/WARNING/CRITICAL] ([X]% used, [Y] available)
 - Pipeline: [HEALTHY/UNHEALTHY]
-- Backlog: [N] pending
+- Backlog: [N] pending [✅ OK / ⚠️ WARNING / 🔴 HIGH / 🔴 CRITICAL]
+
+### Backlog Diagnosis (if HIGH/CRITICAL)
+- Detector: [RUNNING (PID X) / ⚠️ NOT RUNNING]
+- Oldest clip: [timestamp and path]
+- Unprocessed: [N] clips (no detection JSON)
+- Last prune: [timestamp / ⚠️ NOT FOUND]
+- **Fix**: [proposed commands]
 
 ## Detections
 - Total: [N] events
 - Deer: [N] | Person: [N]
 - Highest: [X%] in [segment]
+
+## Frame Examination
+- Segment: [segment_XXXXXX] ([X]% confidence)
+- Timeline: frames [first]-[last] ([duration]s duration)
+- Movement: x_std=[value], avg_x=[value]%, avg_size=[value]%
+- Assessment: [✅ Likely real animal / ⚠️ Possible false positive / 🔍 Inconclusive]
 
 ## Training Queue
 - Queued: [N] clips to /srv/deer-share/training_queue/
@@ -175,8 +344,10 @@ Send final summary:
   ```
   ## Night Watchman Patrol Complete
 
-  **Health**: Disk [OK], Pipeline [HEALTHY], Backlog [N]
+  **Health**: Disk [OK] ([X]% used), Pipeline [HEALTHY]
+  **Backlog**: [N] clips [✅ OK / ⚠️ WARNING / 🔴 CRITICAL] [if CRITICAL: - detector NOT RUNNING]
   **Detections**: [N] events ([N] deer, [N] person)
+  **Frame Exam**: [segment_XXXXXX] - [assessment emoji + reason] (x_std=[value], [duration]s)
   **Training Queue**: [N] clips queued
 
   Digest: runs/logs/watchman/YYYY-MM-DD.md
