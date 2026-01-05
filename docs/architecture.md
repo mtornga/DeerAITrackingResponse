@@ -26,6 +26,7 @@ graph TD
     subgraph "Data Management & Review"
         SharedStorage -->|Daily Segments| ReviewIndex[Daily Review Index]
         ReviewIndex -->|Manual Review| CVAT[CVAT Annotation Tool]
+        ReviewIndex -->|Web UI| ReviewApp[Daily Review App<br/>:8501]
         CVAT -->|Labeled Data| GoldenClips[Golden Clips Archive]
         GoldenClips -->|Curated Dataset| TrainingData[Training Datasets]
     end
@@ -35,9 +36,18 @@ graph TD
         TrainScripts -->|New Weights| Models
     end
 
+    subgraph "Agent Automation"
+        NightWatchman[Night Watchman<br/>CalmEagle] -->|Checks| SharedStorage
+        NightWatchman -->|Validates| Models
+        NightWatchman -->|MCP Tools| AgentMail[MCP Agent Mail<br/>:8765]
+        AgentMail -->|Patrol Reports| MessageArchive[Message Archive<br/>Git-backed]
+    end
+
     style Ubuntu fill:#f9f,stroke:#333,stroke-width:2px
     style SharedStorage fill:#ff9,stroke:#333,stroke-width:2px
     style Models fill:#9f9,stroke:#333,stroke-width:2px
+    style NightWatchman fill:#9cf,stroke:#333,stroke-width:2px
+    style AgentMail fill:#c9f,stroke:#333,stroke-width:2px
 ```
 
 ## Core Components
@@ -64,15 +74,87 @@ graph TD
 *   **Health Check**: `scripts/pipeline_health_check.py` validates the pipeline by running standard test clips (`deer_test.mkv`, `person_test.mkv`) against loaded models to ensure no regressions (e.g., ensuring "person" isn't misclassified as "deer").
 *   **Dashboard**: A tmux-based dashboard allows monitoring of GPU usage, disk space, and log tails.
 
-## Current Health Status (Dec 31, 2025)
+### 5. Agent Coordination (MCP Agent Mail)
+
+The system uses **MCP Agent Mail** for multi-agent coordination - a mail-like layer that lets coding agents communicate asynchronously.
+
+*   **Server**: HTTP-based MCP server running on `192.168.68.71:8765`
+*   **Storage**: SQLite database + Git-backed message archive
+*   **Capabilities**:
+    *   Agent identity registration (adjective-noun names like "CalmEagle")
+    *   Threaded messaging with importance levels
+    *   File reservations to prevent edit conflicts
+    *   Inbox/outbox with acknowledgment tracking
+
+**Architecture**:
+```
+┌─────────────────┐     MCP Tools      ┌──────────────────┐
+│  Claude Code    │◄──────────────────►│  MCP Agent Mail  │
+│  (Night Watch)  │   register_agent   │  Server :8765    │
+│                 │   send_message     │                  │
+│                 │   fetch_inbox      │  ┌────────────┐  │
+│                 │   acknowledge      │  │  SQLite    │  │
+└─────────────────┘                    │  │  + Git     │  │
+                                       │  └────────────┘  │
+                                       └──────────────────┘
+```
+
+### 6. Night Watchman Agent
+
+An autonomous patrol agent that runs daily at 1am Central Time to monitor system health and wildlife activity.
+
+*   **Location**: `agents/night-watchman/`
+*   **Identity**: CalmEagle (registered in Agent Mail)
+*   **Schedule**: Cron job at `0 7 * * *` (7am UTC = 1am CT)
+
+**Patrol Steps** (defined in `SKILL_v2.md`):
+1. **Disk Health**: Check free space on `/` and `/home`
+2. **Pipeline Health**: Run `pipeline_health_check.py --lighting night`
+3. **Detection Summary**: Count events in `/srv/deer-share/runs/live/events/`
+4. **Write Digest**: Create markdown report in `runs/logs/watchman/YYYY-MM-DD.md`
+5. **Agent Mail**: Register, send patrol report to NIGHT-WATCHMAN thread, check inbox
+
+**Launcher** (`run.py`):
+*   Discovers Claude CLI binary
+*   Spawns Claude Code with MCP Agent Mail tools
+*   Default timeout: 5 minutes
+
+**Files**:
+| File | Purpose |
+|------|---------|
+| `run.py` | Minimal launcher (~220 lines) |
+| `run.sh` | Cron wrapper with shell timeout |
+| `SKILL_v2.md` | Patrol instructions for Claude Code |
+
+### 7. Daily Review App
+
+A Streamlit-based web UI for reviewing detection events.
+
+*   **URL**: `http://192.168.68.71:8501/`
+*   **Script**: `scripts/daily_review_app.py`
+*   **Data Source**: `/srv/deer-share/runs/live/events/` and `/srv/deer-share/runs/live/analysis/`
+
+**Features**:
+*   Thumbnail gallery with detection bounding boxes
+*   Confidence filtering and routing decision display
+*   Video playback with metadata inspection
+*   Tag management for feedback loop
+
+## Current Health Status (Jan 4, 2026)
 
 **Pipeline Health Check**: **HEALTHY** (Verified with v7 models)
-*   **Command**: `scripts/pipeline_health_check.py` (Defaults to v7 day models)
+*   **Command**: `scripts/pipeline_health_check.py --lighting night` (auto-selects night models)
 *   **Result**:
     *   **Day Mode**: `deer_test.mkv` (PASS), `person_test.mkv` (PASS)
-    *   **Night Mode**: `deer_test_night.mkv` (PASS)
+    *   **Night Mode**: `deer_test_night.mkv` (PASS) - 33 deer detections, 94.3% max confidence
 *   **Models verified**:
     *   `yolov8n_wildlife_v7_day.pt` / `rtdetr_wildlife_v7_day.pt`
-    *   `yolov8n_wildlife_v7_night.pt` / `rtdetr_wildlife_v7_night.pt`
+    *   `yolov8n_wildlife_v7_night.pt`
 
-**Analysis**: The system is fully operational. The v7 models correctly distinguish between deer and persons in day clips and successfully detect deer in night IR footage, resolving previous misclassification issues.
+**Night Watchman Status**: **OPERATIONAL**
+*   **Agent**: CalmEagle
+*   **Last Patrol**: 2026-01-04 21:18 CT
+*   **System Health**: OK (69% disk free)
+*   **Detection Events**: 7 events detected (2026-01-03), high confidence 0.83-0.94
+
+**Analysis**: The system is fully operational. The v7 models correctly distinguish between deer and persons in day clips and successfully detect deer in night IR footage. The Night Watchman agent runs automated patrols and reports via MCP Agent Mail.
