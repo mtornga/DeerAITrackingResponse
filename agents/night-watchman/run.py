@@ -104,7 +104,7 @@ def build_prompt() -> str:
 
 **Instructions**: Read and follow the instructions in {skill_path}
 
-Complete all 10 steps: health checks, detection summary, backlog check, frame examination, training queue, write digest, and Agent Mail reporting."""
+Complete all 6 steps using BATCHED bash commands to minimize tool calls. Do NOT make individual Read calls for each meta.json - use the bash/jq scripts provided."""
 
 
 def run_claude_code(prompt: str, dry_run: bool, timeout_seconds: int) -> int:
