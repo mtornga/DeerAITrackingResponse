@@ -36,7 +36,7 @@ VERBOSE = False
 # Configuration
 AGENT_NAME = "CalmEagle"
 TIMEZONE = ZoneInfo("America/Chicago")
-DEFAULT_TIMEOUT = 300  # 5 minutes
+DEFAULT_TIMEOUT = 600  # 10 minutes (extended for Puppeteer operations)
 
 
 def log_verbose(msg: str) -> None:
@@ -104,7 +104,7 @@ def build_prompt() -> str:
 
 **Instructions**: Read and follow the instructions in {skill_path}
 
-Complete all 8 steps: disk check, pipeline check, detection summary, write digest, register, send message, check inbox, acknowledge."""
+Complete all 12 steps: health checks, detection summary, backlog check, frame examination, clip tagging via Review UI, training queue, write digest, and Agent Mail reporting."""
 
 
 def run_claude_code(prompt: str, dry_run: bool, timeout_seconds: int) -> int:
@@ -124,7 +124,7 @@ def run_claude_code(prompt: str, dry_run: bool, timeout_seconds: int) -> int:
     cmd = [
         claude_binary,
         "-p", prompt,
-        "--allowedTools", "Read,Write,Bash,mcp__mcp-agent-mail__*",
+        "--allowedTools", "Read,Write,Bash,mcp__mcp-agent-mail__*,mcp__puppeteer__*",
         "--output-format", "text",
     ]
 
