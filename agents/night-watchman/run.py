@@ -221,9 +221,9 @@ def build_prompt(review_start: datetime, review_end: datetime, skill_version: st
     repo_root = get_repo_root()
 
     if skill_version == "v2":
-        # Simplified MCP smoke test
+        # Full v2 patrol with system checks and Agent Mail reporting
         skill_path = repo_root / "agents" / "night-watchman" / "SKILL_v2.md"
-        return f"""Execute the night-watchman-v2 skill (MCP smoke test).
+        return f"""Execute the night-watchman-v2 skill.
 
 **Your Identity**: CalmEagle
 **Project Key**: {repo_root}
@@ -231,7 +231,7 @@ def build_prompt(review_start: datetime, review_end: datetime, skill_version: st
 
 **Instructions**: Read and follow the instructions in {skill_path}
 
-Complete all 4 steps: register, send message, check inbox, acknowledge."""
+Complete all 8 steps: disk check, pipeline check, detection summary, write digest, register, send message, check inbox, acknowledge."""
     else:
         # Full v1 skill
         skill_path = repo_root / "agents" / "night-watchman" / "SKILL.md"
