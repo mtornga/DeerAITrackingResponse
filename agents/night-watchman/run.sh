@@ -28,7 +28,7 @@ set -euo pipefail
 REPO_DIR="${REPO_DIR:-/home/mtornga/projects/DeerAITrackingResponse}"
 VENV_DIR="${VENV_DIR:-${REPO_DIR}/.venv}"
 LOG_DIR="${LOG_DIR:-${REPO_DIR}/runs/logs/watchman}"
-SHELL_TIMEOUT="${SHELL_TIMEOUT:-4200}"  # 70 minutes (safety margin over Python's 60 min default)
+SHELL_TIMEOUT="${SHELL_TIMEOUT:-600}"  # 10 minutes (safety margin over Python's 5 min default)
 
 resolve_claude_bin() {
     local candidate=""
@@ -98,7 +98,7 @@ echo "Using claude CLI at ${CLAUDE_BIN_PATH}"
 echo "Shell timeout: ${SHELL_TIMEOUT}s"
 
 # Run the agent with shell-level timeout as safety net
-# The Python script has its own timeout (default 3600s), but this provides defense in depth
+# The Python script has its own timeout (default 300s), but this provides defense in depth
 if command -v timeout >/dev/null 2>&1; then
     timeout "${SHELL_TIMEOUT}" python agents/night-watchman/run.py "$@"
     exit_code=$?
