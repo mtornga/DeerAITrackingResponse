@@ -170,10 +170,11 @@ def check_claude_settings(repo_root: Path) -> dict:
     return settings
 
 
-def test_claude_ping(claude_binary: str, repo_root: Path, timeout: int = 30) -> bool:
-    """Quick test that Claude can respond at all."""
+def test_claude_ping(claude_binary: str, repo_root: Path, timeout: int = 60) -> bool:
+    """Quick test that Claude can respond at all. Non-fatal - just warns on failure."""
     log("Testing Claude API connectivity...")
     try:
+        start = time.time()
         result = subprocess.run(
             [claude_binary, "-p", "Reply with just: PONG", "--output-format", "text"],
             cwd=repo_root,
@@ -181,18 +182,19 @@ def test_claude_ping(claude_binary: str, repo_root: Path, timeout: int = 30) -> 
             text=True,
             timeout=timeout,
         )
+        elapsed = time.time() - start
         if "PONG" in result.stdout or result.returncode == 0:
-            log(f"Claude ping OK (took <{timeout}s)")
+            log(f"Claude ping OK ({elapsed:.1f}s)")
             return True
         else:
             log(f"Claude ping unexpected response: {result.stdout[:100]}", "WARN")
             return True  # Still consider it working if we got a response
     except subprocess.TimeoutExpired:
-        log(f"Claude ping TIMEOUT after {timeout}s - API may be slow", "ERROR")
-        return False
+        log(f"Claude ping TIMEOUT after {timeout}s - API is slow but proceeding anyway", "WARN")
+        return True  # Don't abort - let the main command try
     except Exception as e:
-        log(f"Claude ping failed: {e}", "ERROR")
-        return False
+        log(f"Claude ping failed: {e} - proceeding anyway", "WARN")
+        return True  # Don't abort - let the main command try
 
 
 def run_claude_code(prompt: str, dry_run: bool, timeout_seconds: int) -> int:
