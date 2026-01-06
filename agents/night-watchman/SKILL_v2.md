@@ -104,11 +104,17 @@ else
   echo "Oldest clip: (none found)"
 fi
 
-# 3. Count unprocessed (no detection JSON)
+# 3. Count clips vs detections
 ANALYSIS_COUNT=$(find /srv/deer-share/runs/live/analysis -name "*.mkv" 2>/dev/null | wc -l | tr -d ' ')
 DETECTION_COUNT=$(find /srv/deer-share/runs/live/detections -name "*.json" 2>/dev/null | wc -l | tr -d ' ')
-UNPROCESSED=$((ANALYSIS_COUNT - DETECTION_COUNT))
-echo "Unprocessed (no detection): $UNPROCESSED clips"
+echo "Analysis clips: $ANALYSIS_COUNT"
+echo "Detection JSONs: $DETECTION_COUNT"
+if [ "$ANALYSIS_COUNT" -gt "$DETECTION_COUNT" ]; then
+  UNPROCESSED=$((ANALYSIS_COUNT - DETECTION_COUNT))
+  echo "Pending detection: $UNPROCESSED clips awaiting processing"
+else
+  echo "Detection caught up (more JSONs than clips - clips may have been pruned)"
+fi
 
 # 4. Check prune history
 if [ -f /srv/deer-share/logs/prune_events.log ]; then
@@ -123,7 +129,7 @@ echo "=== PROPOSED FIX ==="
 if ! pgrep -f "live_detector" > /dev/null; then
   echo "1. Restart detector: cd ~/projects/DeerAITrackingResponse && source .venv/bin/activate && python scripts/live_detector_multimodel.py --daemon"
 fi
-if [ "$UNPROCESSED" -gt 100 ]; then
+if [ "$ANALYSIS_COUNT" -gt 100 ]; then
   echo "2. Run manual prune: python scripts/prune_segments_without_events.py --dry-run"
 fi
 echo "3. Verify cron is scheduling prune_events.py"

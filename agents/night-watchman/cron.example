@@ -22,5 +22,11 @@
 # Alternative: Log to project directory instead of /var/log
 # 0 7 * * * /home/mtornga/projects/DeerAITrackingResponse/agents/night-watchman/run.sh >> /home/mtornga/projects/DeerAITrackingResponse/runs/logs/watchman/cron.log 2>&1
 
+# Pruning Schedules
+# Clear backlog of non-event segments hourly
+0 * * * * cd /home/mtornga/projects/DeerAITrackingResponse && .venv/bin/python scripts/prune_segments_without_events.py >> runs/logs/prune_segments.log 2>&1
+# Enforce retention policy on events daily at 3am
+0 3 * * * cd /home/mtornga/projects/DeerAITrackingResponse && .venv/bin/python scripts/prune_events.py >> runs/logs/prune_events.log 2>&1
+
 # For testing: Run every 5 minutes (comment out when done testing)
 # */5 * * * * /home/mtornga/projects/DeerAITrackingResponse/agents/night-watchman/run.sh --dry-run >> /tmp/night-watchman-test.log 2>&1

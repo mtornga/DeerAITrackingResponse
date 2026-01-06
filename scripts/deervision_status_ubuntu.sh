@@ -153,7 +153,7 @@ main() {
     # Edit this list to match the long-running jobs you care about.
     local processes=(
         "ingest_live:reolink_stream_ingest.py"
-        "detector_live:live_megadetector.py"
+        "detector_live:live_detector_multimodel.py"
         "cleanup_prune:prune_segments_without_events.py"
     )
     local entry label pattern

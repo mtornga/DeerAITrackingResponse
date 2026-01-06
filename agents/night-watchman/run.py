@@ -72,6 +72,12 @@ def discover_claude_binary() -> Optional[str]:
         for cli_path in sorted(nvm_root.glob("*/bin/claude"), reverse=True):
             candidates.append(str(cli_path))
 
+    # Check npx cache (for npx @anthropic-ai/claude-code installations)
+    npx_cache = Path.home() / ".npm" / "_npx"
+    if npx_cache.exists():
+        for cli_path in npx_cache.glob("*/node_modules/.bin/claude"):
+            candidates.append(str(cli_path))
+
     seen: set[str] = set()
     for candidate in candidates:
         if not candidate or candidate in seen:

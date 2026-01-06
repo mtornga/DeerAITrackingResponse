@@ -58,6 +58,16 @@ resolve_claude_bin() {
         fi
     fi
 
+    # Check npx cache (for npx @anthropic-ai/claude-code installations)
+    local npx_cache="${HOME}/.npm/_npx"
+    if [[ -d "${npx_cache}" ]]; then
+        candidate="$(find "${npx_cache}" -path '*/node_modules/.bin/claude' -type f -o -path '*/node_modules/.bin/claude' -type l 2>/dev/null | head -n 1)"
+        if [[ -n "${candidate}" && -x "${candidate}" ]]; then
+            printf '%s\n' "${candidate}"
+            return 0
+        fi
+    fi
+
     return 1
 }
 
