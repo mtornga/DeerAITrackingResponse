@@ -28,7 +28,7 @@ set -euo pipefail
 REPO_DIR="${REPO_DIR:-/home/mtornga/projects/DeerAITrackingResponse}"
 VENV_DIR="${VENV_DIR:-${REPO_DIR}/.venv}"
 LOG_DIR="${LOG_DIR:-${REPO_DIR}/runs/logs/watchman}"
-SHELL_TIMEOUT="${SHELL_TIMEOUT:-600}"  # 10 minutes (safety margin over Python's 5 min default)
+SHELL_TIMEOUT="${SHELL_TIMEOUT:-720}"  # 12 minutes (safety margin over Python's 10 min default)
 
 resolve_claude_bin() {
     local candidate=""

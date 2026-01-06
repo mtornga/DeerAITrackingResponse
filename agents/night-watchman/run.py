@@ -40,7 +40,7 @@ VERBOSE = False
 # Configuration
 AGENT_NAME = "CalmEagle"
 TIMEZONE = ZoneInfo("America/Chicago")
-DEFAULT_TIMEOUT = 420  # 7 minutes
+DEFAULT_TIMEOUT = 600  # 10 minutes
 
 
 def log(msg: str, level: str = "INFO") -> None:
