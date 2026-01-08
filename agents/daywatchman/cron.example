@@ -1,0 +1,22 @@
+# Day Watchman Agent - Cron Configuration
+#
+# Schedule: 3pm Central Time daily
+# Use CRON_TZ to avoid DST drift.
+#
+# To install on Ubuntu server:
+#   1. Edit crontab:
+#      crontab -e
+#   2. Add the cron entry below
+#   3. Verify:
+#      crontab -l
+#
+# Log file will be at /var/log/day-watchman.log
+# Make sure the log directory is writable or change the path
+#
+
+CRON_TZ=America/Chicago
+0 15 * * * /home/mtornga/projects/DeerAITrackingResponse/agents/daywatchman/run.sh >> /var/log/day-watchman.log 2>&1
+
+# Alternative: Log to project directory instead of /var/log
+# CRON_TZ=America/Chicago
+# 0 15 * * * /home/mtornga/projects/DeerAITrackingResponse/agents/daywatchman/run.sh >> /home/mtornga/projects/DeerAITrackingResponse/runs/logs/watchman/day-watchman-cron.log 2>&1
