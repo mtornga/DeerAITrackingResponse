@@ -233,7 +233,8 @@ def build_codex_prompt(
         "   - to: {recipients}\n"
         "   - thread_id: {thread_id}\n"
         "   - body_md: include health, backlog, detections, frame exam, training queue size "
-        "(e.g., 'Training Queue: 7 clips queued' or 'Training Queue: 0 clips queued'), "
+        "(use training_queue.queue_size from the snapshot when available, e.g., "
+        "'Training Queue: 7 clips queued' or 'Training Queue: 0 clips queued'), "
         "and the digest path.\n\n"
         "5) Fetch inbox for {agent_name} with mcp__mcp_agent_mail__fetch_inbox and "
         "acknowledge any messages with ack_required=true using "
@@ -319,6 +320,9 @@ def build_fallback_body(snapshot: Dict[str, Any], agent_name: str, digest_path: 
     frame_exam = snapshot.get("frame_exam") or {}
     pipeline = snapshot.get("pipeline", {})
     training_queue = snapshot.get("training_queue", {})
+    queue_size = training_queue.get("queue_size")
+    if queue_size is None:
+        queue_size = len(training_queue.get("queued", []))
     errors = snapshot.get("errors", [])
 
     frame_summary = "No events to examine"
@@ -338,7 +342,7 @@ def build_fallback_body(snapshot: Dict[str, Any], agent_name: str, digest_path: 
         ),
         f"Detections: {detections.get('total_segments', 0)} segments",
         f"Frame Exam: {frame_summary}",
-        f"Training Queue: {len(training_queue.get('queued', []))} clips queued",
+        f"Training Queue: {queue_size} clips queued",
         "",
         f"Digest: {digest_path}",
         "",

@@ -101,6 +101,17 @@ class FrameExam:
 @dataclass
 class QueueReport:
     queued: List[str]
+    queue_size: int
+
+
+def count_training_queue(queue_dir: Path, errors: List[str]) -> int:
+    if not queue_dir.exists():
+        return 0
+    try:
+        return sum(1 for entry in queue_dir.iterdir() if entry.is_dir())
+    except Exception as exc:  # pragma: no cover - filesystem issues
+        errors.append(f"Failed to read training queue {queue_dir}: {exc}")
+        return 0
 
 
 class MCPClient:
@@ -444,24 +455,24 @@ def queue_for_training(
     segments: List[SegmentInfo],
     max_queue: int,
     dry_run: bool,
+    errors: List[str],
 ) -> QueueReport:
     queued: List[str] = []
-    if dry_run:
-        return QueueReport(queued=queued)
-
-    QUEUE_DIR.mkdir(parents=True, exist_ok=True)
-    for segment in segments:
-        if len(queued) >= max_queue:
-            break
-        if segment.animal <= 0 and segment.person <= 0:
-            continue
-        queue_name = f"{segment.date}_{segment.segment}"
-        dest = QUEUE_DIR / queue_name
-        if dest.exists():
-            continue
-        shutil.copytree(segment.path, dest)
-        queued.append(queue_name)
-    return QueueReport(queued=queued)
+    if not dry_run:
+        QUEUE_DIR.mkdir(parents=True, exist_ok=True)
+        for segment in segments:
+            if len(queued) >= max_queue:
+                break
+            if segment.animal <= 0 and segment.person <= 0:
+                continue
+            queue_name = f"{segment.date}_{segment.segment}"
+            dest = QUEUE_DIR / queue_name
+            if dest.exists():
+                continue
+            shutil.copytree(segment.path, dest)
+            queued.append(queue_name)
+    queue_size = count_training_queue(QUEUE_DIR, errors)
+    return QueueReport(queued=queued, queue_size=queue_size)
 
 
 def write_digest(
@@ -559,8 +570,9 @@ def write_digest(
     lines.append("")
 
     lines.append("## Training Queue")
-    lines.append(f"- Queued: {len(queue_report.queued)} clips")
+    lines.append(f"- Queue size: {queue_report.queue_size} clips")
     if queue_report.queued:
+        lines.append(f"- Added this run: {len(queue_report.queued)} clips")
         for name in queue_report.queued:
             lines.append(f"  - {name}")
     lines.append("")
@@ -674,6 +686,7 @@ def build_snapshot(
         ),
         "training_queue": {
             "queued": queue_report.queued,
+            "queue_size": queue_report.queue_size,
         },
         "errors": errors,
     }
@@ -958,7 +971,7 @@ def run_patrol(args: argparse.Namespace) -> int:
             skip_mail,
             errors,
         )
-    queue_report = queue_for_training(segments, args.max_queue, args.dry_run)
+    queue_report = queue_for_training(segments, args.max_queue, args.dry_run, errors)
 
     if args.progress_mail:
         send_message_safe(
@@ -1033,7 +1046,7 @@ def run_patrol(args: argparse.Namespace) -> int:
                 f"Backlog: {backlog_count} pending of {analysis_count} ({backlog_status})\n"
                 f"Detections: {len(segments)} segments\n"
                 f"Frame Exam: {format_frame_exam_summary(frame_exam)}\n"
-                f"Training Queue: {len(queue_report.queued)} clips queued\n\n"
+                f"Training Queue: {queue_report.queue_size} clips queued\n\n"
                 f"Digest: {digest_path}\n\n"
                 f"-- {args.agent_name} @ {start_time.strftime('%Y-%m-%d %H:%M:%S %Z')}"
             ),
@@ -1064,7 +1077,7 @@ def run_patrol(args: argparse.Namespace) -> int:
     log(f"Backlog: {backlog_count} pending of {analysis_count} ({backlog_status})")
     log(f"Detections: {len(segments)} segments")
     log(f"Frame Exam: {format_frame_exam_summary(frame_exam)}")
-    log(f"Training Queue: {len(queue_report.queued)} queued")
+    log(f"Training Queue: {queue_report.queue_size} queued")
     if errors:
         log(f"Errors: {len(errors)} (see digest)", "WARN")
 
