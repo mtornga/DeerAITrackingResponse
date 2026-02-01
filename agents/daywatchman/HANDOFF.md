@@ -42,7 +42,8 @@ This avoids a misleading "stuck at 1371" backlog. The report now prints:
 `Backlog: <pending> pending of <analysis_count>`.
 
 ## Progress Messages
-Progress mail is **off by default** to avoid empty step messages.
+Progress mail is **off by default** to avoid extra chatter.
+When enabled, only a single Patrol Starting notice is sent (no step-by-step mail).
 Enable via:
 - env: `DAYWATCHMAN_PROGRESS_MAIL=true`
 - flag: `--progress-mail`
@@ -89,6 +90,9 @@ Reporter only:
 - `DAYWATCHMAN_DETECTIONS_DIR` (default /srv/deer-share/runs/live/detections)
 - `DAYWATCHMAN_EVENTS_DIR` (default /srv/deer-share/runs/live/events)
 - `DAYWATCHMAN_QUEUE_DIR` (default /srv/deer-share/training_queue)
+- `DAYWATCHMAN_DETECTOR_LOG` (default /srv/deer-share/runs/live/logs/detector.log)
+- `DAYWATCHMAN_PUSHOVER_STALE_HOURS` (default 24)
+- `DAYWATCHMAN_PUSHOVER_LOG_LINES` (default 5000)
 
 ## Troubleshooting
 - If backlog stays HIGH/CRITICAL, check detector status and prune logs:

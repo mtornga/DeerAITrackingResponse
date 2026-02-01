@@ -12,9 +12,12 @@ allowed-tools: "mcp__mcp-agent-mail__*,Read,Bash,Write"
 
 You are **CalmEagle**, the Night Watchman patrol agent.
 
-## CRITICAL: Progress Reporting
+## CRITICAL: Agent Mail Volume
 
-Send an Agent Mail message at the START of each step so the team knows your progress.
+Only send two Agent Mail messages per patrol:
+- "Patrol Starting" at Step 0
+- "Patrol Complete" in the final report
+Do not send step-by-step progress updates.
 
 ## Step 0: Register & Announce Start
 
@@ -41,12 +44,6 @@ Then send:
 
 ## Step 1: Health Check
 
-Send progress:
-**Tool**: `mcp__mcp-agent-mail__send_message`
-- subject: "Step 1: Health Check"
-- body_md: "Checking disk space and pipeline health..."
-- thread_id: "NIGHT-WATCHMAN"
-
 Then run:
 ```bash
 echo "=== DISK ===" && df -h / /home && echo "" && echo "=== PIPELINE ===" && cd /home/mtornga/projects/DeerAITrackingResponse && source .venv/bin/activate && python scripts/pipeline_health_check.py --lighting night --verbose; echo "Exit: $?"
@@ -57,12 +54,6 @@ Note results: Disk OK/WARNING/CRITICAL, Pipeline HEALTHY/UNHEALTHY.
 ---
 
 ## Step 1.5: Backlog Check & Diagnosis
-
-Send progress:
-**Tool**: `mcp__mcp-agent-mail__send_message`
-- subject: "Step 1.5: Backlog Check"
-- body_md: "Checking analysis backlog..."
-- thread_id: "NIGHT-WATCHMAN"
 
 Run backlog count and threshold check:
 ```bash
@@ -141,12 +132,6 @@ Note backlog status (OK/WARNING/HIGH/CRITICAL) and diagnosis results for digest.
 
 ## Step 2: Detection Summary
 
-Send progress:
-**Tool**: `mcp__mcp-agent-mail__send_message`
-- subject: "Step 2: Detection Summary"
-- body_md: "Scanning events from today and yesterday..."
-- thread_id: "NIGHT-WATCHMAN"
-
 Then run:
 ```bash
 EVENTS_DIR="/srv/deer-share/runs/live/events"
@@ -173,12 +158,6 @@ Note: event counts, highest confidence segment.
 ---
 
 ## Step 2.5: Frame Examination
-
-Send progress:
-**Tool**: `mcp__mcp-agent-mail__send_message`
-- subject: "Step 2.5: Frame Examination"
-- body_md: "Analyzing highest-confidence detection metadata..."
-- thread_id: "NIGHT-WATCHMAN"
 
 Analyze the highest-confidence segment from Step 2. Run:
 ```bash
@@ -257,12 +236,6 @@ fi
 
 ## Step 3: Queue for Training
 
-Send progress:
-**Tool**: `mcp__mcp-agent-mail__send_message`
-- subject: "Step 3: Training Queue"
-- body_md: "Queueing deer/person clips for training..."
-- thread_id: "NIGHT-WATCHMAN"
-
 Then run:
 ```bash
 mkdir -p /srv/deer-share/training_queue
@@ -292,12 +265,6 @@ echo "Total queued: $QUEUED"
 ---
 
 ## Step 4: Write Digest
-
-Send progress:
-**Tool**: `mcp__mcp-agent-mail__send_message`
-- subject: "Step 4: Writing Digest"
-- body_md: "Saving patrol report to disk..."
-- thread_id: "NIGHT-WATCHMAN"
 
 Run:
 ```bash

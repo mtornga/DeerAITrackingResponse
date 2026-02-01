@@ -2,7 +2,7 @@
 """
 Day Watchman patrol agent.
 
-Runs deterministic patrol tasks and reports progress through MCP Agent Mail.
+Runs deterministic patrol tasks and reports patrol start/completion via MCP Agent Mail.
 Designed for cron execution at 3pm Central time.
 """
 
@@ -12,12 +12,14 @@ import argparse
 import json
 import math
 import os
+import re
 import shutil
 import subprocess
 import sys
 import time
+from collections import deque
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from zoneinfo import ZoneInfo
@@ -33,6 +35,11 @@ DEFAULT_MCP_URL = os.environ.get("DAYWATCHMAN_MCP_URL", "http://127.0.0.1:8765/m
 DEFAULT_HEALTH_TIMEOUT = int(os.environ.get("DAYWATCHMAN_HEALTH_TIMEOUT", "600"))
 DEFAULT_MAX_QUEUE = int(os.environ.get("DAYWATCHMAN_MAX_QUEUE", "6"))
 DEFAULT_LOGS_DIRNAME = "runs/logs/watchman"
+DEFAULT_DETECTOR_LOG = Path(
+    os.environ.get("DAYWATCHMAN_DETECTOR_LOG", "/srv/deer-share/runs/live/logs/detector.log")
+)
+DEFAULT_PUSHOVER_STALE_HOURS = int(os.environ.get("DAYWATCHMAN_PUSHOVER_STALE_HOURS", "24"))
+DEFAULT_PUSHOVER_LOG_LINES = int(os.environ.get("DAYWATCHMAN_PUSHOVER_LOG_LINES", "5000"))
 
 
 def env_truthy(name: str, default: bool = False) -> bool:
@@ -102,6 +109,31 @@ class FrameExam:
 class QueueReport:
     queued: List[str]
     queue_size: int
+
+
+@dataclass
+class PushoverReport:
+    status: str
+    last_sent_utc: Optional[str]
+    last_sent_local: Optional[str]
+    last_segment: Optional[str]
+    segment_capture_utc: Optional[str]
+    lag_seconds: Optional[float]
+    lag_human: Optional[str]
+    last_error: Optional[str]
+    log_path: str
+
+
+LOG_LINE_RE = re.compile(
+    r"^(?P<ts>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),(?P<ms>\d+) "
+    r"\[(?P<level>[A-Z]+)\] (?P<msg>.*)$"
+)
+PROMOTED_RE = re.compile(
+    r"Promoted (?P<segment>\d{4}-\d{2}-\d{2}/segment_[0-9_]+\.(?:mkv|mp4))"
+)
+SEGMENT_TS_RE = re.compile(
+    r"(?P<date>\d{4}-\d{2}-\d{2})/segment_(?P<time>\d{6})"
+)
 
 
 def count_training_queue(queue_dir: Path, errors: List[str]) -> int:
@@ -481,6 +513,7 @@ def write_digest(
     start_time: datetime,
     disk_reports: List[DiskReport],
     pipeline_report: PipelineReport,
+    pushover_report: PushoverReport,
     backlog_count: int,
     backlog_status: str,
     analysis_count: int,
@@ -522,6 +555,18 @@ def write_digest(
     lines.append(
         f"- Backlog: {backlog_count} pending ({backlog_status}) of {analysis_count} analysis clips"
     )
+    lines.append("")
+
+    lines.append("## Pushover")
+    lines.append(f"- Status: {pushover_report.status}")
+    if pushover_report.last_sent_local:
+        lines.append(f"- Last notification: {pushover_report.last_sent_local}")
+    if pushover_report.last_segment:
+        lines.append(f"- Last segment: {pushover_report.last_segment}")
+    if pushover_report.lag_human:
+        lines.append(f"- Capture -> notify lag: {pushover_report.lag_human}")
+    if pushover_report.last_error:
+        lines.append(f"- Last error: {pushover_report.last_error}")
     lines.append("")
 
     if backlog_diagnosis:
@@ -592,6 +637,7 @@ def build_snapshot(
     start_time: datetime,
     disk_reports: List[DiskReport],
     pipeline_report: PipelineReport,
+    pushover_report: PushoverReport,
     backlog_count: int,
     backlog_status: str,
     analysis_count: int,
@@ -626,6 +672,17 @@ def build_snapshot(
             "summary": pipeline_report.summary,
             "duration_s": pipeline_report.duration_s,
             "output_tail": pipeline_report.output_tail,
+        },
+        "pushover": {
+            "status": pushover_report.status,
+            "last_sent_utc": pushover_report.last_sent_utc,
+            "last_sent_local": pushover_report.last_sent_local,
+            "last_segment": pushover_report.last_segment,
+            "segment_capture_utc": pushover_report.segment_capture_utc,
+            "lag_seconds": pushover_report.lag_seconds,
+            "lag_human": pushover_report.lag_human,
+            "last_error": pushover_report.last_error,
+            "log_path": pushover_report.log_path,
         },
         "backlog": {
             "count": backlog_count,
@@ -722,6 +779,166 @@ def format_frame_exam_summary(frame_exam: Optional[FrameExam]) -> str:
     if not frame_exam:
         return "No events to examine"
     return f"{frame_exam.segment}: {frame_exam.assessment} ({frame_exam.movement})"
+
+
+def format_utc(timestamp: datetime) -> str:
+    return timestamp.astimezone(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def format_local(timestamp: datetime) -> str:
+    return timestamp.astimezone(TIMEZONE).strftime("%Y-%m-%d %H:%M:%S %Z")
+
+
+def format_duration(seconds: float) -> str:
+    if seconds < 0:
+        return "n/a"
+    total = int(round(seconds))
+    minutes, secs = divmod(total, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours > 0:
+        return f"{hours}h {minutes}m {secs}s"
+    if minutes > 0:
+        return f"{minutes}m {secs}s"
+    return f"{secs}s"
+
+
+def tail_lines(path: Path, max_lines: int, errors: List[str]) -> List[str]:
+    if max_lines <= 0:
+        return []
+    try:
+        with path.open("r", encoding="utf-8", errors="ignore") as handle:
+            return list(deque(handle, maxlen=max_lines))
+    except FileNotFoundError:
+        return []
+    except Exception as exc:  # pragma: no cover - filesystem issues
+        errors.append(f"Failed to read log {path}: {exc}")
+        return []
+
+
+def parse_log_line(line: str) -> Optional[Tuple[datetime, str]]:
+    match = LOG_LINE_RE.match(line.strip())
+    if not match:
+        return None
+    timestamp = match.group("ts")
+    message = match.group("msg")
+    try:
+        parsed = datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return None
+    return parsed, message
+
+
+def parse_segment_capture_time(segment: str) -> Optional[datetime]:
+    match = SEGMENT_TS_RE.search(segment)
+    if not match:
+        return None
+    stamp = f"{match.group('date')} {match.group('time')}"
+    try:
+        parsed = datetime.strptime(stamp, "%Y-%m-%d %H%M%S")
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=UTC)
+
+
+def collect_pushover_report(
+    log_path: Path,
+    now: datetime,
+    errors: List[str],
+) -> PushoverReport:
+    if not log_path.exists():
+        return PushoverReport(
+            status="MISSING",
+            last_sent_utc=None,
+            last_sent_local=None,
+            last_segment=None,
+            segment_capture_utc=None,
+            lag_seconds=None,
+            lag_human=None,
+            last_error=None,
+            log_path=str(log_path),
+        )
+
+    lines = tail_lines(log_path, DEFAULT_PUSHOVER_LOG_LINES, errors)
+    last_sent_idx = None
+    last_sent_ts = None
+    last_error_ts = None
+    last_error_msg = None
+
+    for idx in range(len(lines) - 1, -1, -1):
+        parsed = parse_log_line(lines[idx])
+        if not parsed:
+            continue
+        ts, msg = parsed
+        if last_sent_idx is None and "Pushover notification sent" in msg:
+            last_sent_idx = idx
+            last_sent_ts = ts
+        if last_error_ts is None and (
+            "Pushover API error" in msg
+            or "Pushover request failed" in msg
+            or "Pushover not configured or disabled" in msg
+        ):
+            last_error_ts = ts
+            last_error_msg = msg
+        if last_sent_idx is not None and last_error_ts is not None:
+            break
+
+    last_segment = None
+    if last_sent_idx is not None:
+        for idx in range(last_sent_idx - 1, -1, -1):
+            parsed = parse_log_line(lines[idx])
+            if not parsed:
+                continue
+            _, msg = parsed
+            promoted = PROMOTED_RE.search(msg)
+            if promoted:
+                last_segment = promoted.group("segment")
+                break
+
+    capture_time = parse_segment_capture_time(last_segment) if last_segment else None
+    last_sent_utc = None
+    last_sent_local = None
+    lag_seconds = None
+    lag_human = None
+
+    if last_sent_ts is not None:
+        last_sent_utc = last_sent_ts.replace(tzinfo=TIMEZONE).astimezone(UTC)
+        if capture_time is not None:
+            lag_seconds = (last_sent_utc - capture_time).total_seconds()
+            if lag_seconds < 0:
+                alt_sent_utc = last_sent_ts.replace(tzinfo=UTC)
+                alt_lag = (alt_sent_utc - capture_time).total_seconds()
+                if alt_lag >= 0:
+                    last_sent_utc = alt_sent_utc
+                    lag_seconds = alt_lag
+            lag_human = format_duration(lag_seconds)
+        last_sent_local = format_local(last_sent_utc)
+
+    status = "UNKNOWN"
+    now_utc = now.astimezone(UTC)
+    if last_sent_utc is None:
+        status = "ERROR" if last_error_ts else "NO_DATA"
+    else:
+        status = "OK"
+        if last_error_ts is not None:
+            last_error_utc = last_error_ts.replace(tzinfo=TIMEZONE).astimezone(UTC)
+            if last_error_utc > last_sent_utc:
+                status = "ERROR"
+        if status == "OK":
+            stale_after = timedelta(hours=DEFAULT_PUSHOVER_STALE_HOURS)
+            if now_utc - last_sent_utc > stale_after:
+                status = "STALE"
+
+    return PushoverReport(
+        status=status,
+        last_sent_utc=format_utc(last_sent_utc) if last_sent_utc else None,
+        last_sent_local=last_sent_local,
+        last_segment=last_segment,
+        segment_capture_utc=format_utc(capture_time) if capture_time else None,
+        lag_seconds=lag_seconds,
+        lag_human=lag_human,
+        last_error=last_error_msg,
+        log_path=str(log_path),
+    )
 
 
 def send_message_safe(
@@ -870,25 +1087,13 @@ def run_patrol(args: argparse.Namespace) -> int:
             "Patrol Starting",
             (
                 f"Starting day patrol at {start_time.strftime('%Y-%m-%d %H:%M:%S %Z')}. "
-                "Steps: health, backlog, detections, frame exam, training queue, digest, report, inbox."
+                "Steps: health, backlog, detections, frame exam, training queue, pushover, digest, report, inbox."
             ),
             args.thread_id,
             skip_mail,
             errors,
         )
 
-    if args.progress_mail:
-        send_message_safe(
-            client,
-            str(repo_root),
-            args.agent_name,
-            recipients,
-            "Step 1: Health Check",
-            "Checking disk space and pipeline health.",
-            args.thread_id,
-            skip_mail,
-            errors,
-        )
     disk_reports = [
         disk_report("/"),
         disk_report("/srv/deer-share"),
@@ -901,18 +1106,6 @@ def run_patrol(args: argparse.Namespace) -> int:
     if pipeline_report.summary == "UNKNOWN":
         errors.append("Pipeline health check did not emit a Status line")
 
-    if args.progress_mail:
-        send_message_safe(
-            client,
-            str(repo_root),
-            args.agent_name,
-            recipients,
-            "Step 2: Backlog Check",
-            "Checking analysis backlog and running diagnosis if needed.",
-            args.thread_id,
-            skip_mail,
-            errors,
-        )
     analysis_count, pending_count, oldest_backlog = scan_analysis_backlog(
         ANALYSIS_DIR,
         DETECTIONS_DIR,
@@ -928,69 +1121,24 @@ def run_patrol(args: argparse.Namespace) -> int:
             oldest_path=oldest_backlog,
         )
 
-    if args.progress_mail:
-        send_message_safe(
-            client,
-            str(repo_root),
-            args.agent_name,
-            recipients,
-            "Step 3: Detection Summary",
-            "Summarizing detections from today and yesterday.",
-            args.thread_id,
-            skip_mail,
-            errors,
-        )
     today = start_time.strftime("%Y-%m-%d")
     yesterday = (start_time - timedelta(days=1)).strftime("%Y-%m-%d")
     segments = list_segments([today, yesterday], errors)
     best_segment = select_best_segment(segments)
 
-    if args.progress_mail:
-        send_message_safe(
-            client,
-            str(repo_root),
-            args.agent_name,
-            recipients,
-            "Step 4: Frame Examination",
-            "Analyzing highest-confidence detection metadata.",
-            args.thread_id,
-            skip_mail,
-            errors,
-        )
     frame_exam = analyze_frame(best_segment) if best_segment else None
 
-    if args.progress_mail:
-        send_message_safe(
-            client,
-            str(repo_root),
-            args.agent_name,
-            recipients,
-            "Step 5: Training Queue",
-            "Queueing deer/person clips for training.",
-            args.thread_id,
-            skip_mail,
-            errors,
-        )
     queue_report = queue_for_training(segments, args.max_queue, args.dry_run, errors)
 
-    if args.progress_mail:
-        send_message_safe(
-            client,
-            str(repo_root),
-            args.agent_name,
-            recipients,
-            "Step 6: Writing Digest",
-            "Writing patrol report to disk.",
-            args.thread_id,
-            skip_mail,
-            errors,
-        )
+    pushover_report = collect_pushover_report(DEFAULT_DETECTOR_LOG, start_time, errors)
+
     digest_path = write_digest(
         repo_root=repo_root,
         agent_name=args.agent_name,
         start_time=start_time,
         disk_reports=disk_reports,
         pipeline_report=pipeline_report,
+        pushover_report=pushover_report,
         backlog_count=backlog_count,
         backlog_status=backlog_status,
         analysis_count=analysis_count,
@@ -1008,6 +1156,7 @@ def run_patrol(args: argparse.Namespace) -> int:
         start_time=start_time,
         disk_reports=disk_reports,
         pipeline_report=pipeline_report,
+        pushover_report=pushover_report,
         backlog_count=backlog_count,
         backlog_status=backlog_status,
         analysis_count=analysis_count,
@@ -1043,6 +1192,8 @@ def run_patrol(args: argparse.Namespace) -> int:
                 "## Day Watchman Patrol Complete\n\n"
                 f"Health: {format_disk_summary(disk_reports)}; "
                 f"Pipeline {pipeline_report.summary}\n"
+                f"Pushover: {pushover_report.status} "
+                f"(lag {pushover_report.lag_human or 'n/a'})\n"
                 f"Backlog: {backlog_count} pending of {analysis_count} ({backlog_status})\n"
                 f"Detections: {len(segments)} segments\n"
                 f"Frame Exam: {format_frame_exam_summary(frame_exam)}\n"
@@ -1055,18 +1206,6 @@ def run_patrol(args: argparse.Namespace) -> int:
             errors,
         )
 
-        if args.progress_mail:
-            send_message_safe(
-                client,
-                str(repo_root),
-                args.agent_name,
-                recipients,
-                "Step 7: Inbox Check",
-                "Checking inbox for new messages.",
-                args.thread_id,
-                skip_mail,
-                errors,
-            )
         fetch_inbox_safe(client, str(repo_root), args.agent_name, skip_mail, errors)
 
     log("PATROL COMPLETE")
@@ -1074,6 +1213,7 @@ def run_patrol(args: argparse.Namespace) -> int:
         f"Health: {format_disk_summary(disk_reports)}; "
         f"Pipeline {pipeline_report.summary}"
     )
+    log(f"Pushover: {pushover_report.status} (lag {pushover_report.lag_human or 'n/a'})")
     log(f"Backlog: {backlog_count} pending of {analysis_count} ({backlog_status})")
     log(f"Detections: {len(segments)} segments")
     log(f"Frame Exam: {format_frame_exam_summary(frame_exam)}")
@@ -1091,7 +1231,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--progress-mail",
         action="store_true",
-        help="Send progress updates for each step",
+        help="Send a patrol starting notice",
     )
     parser.add_argument(
         "--collect-only",

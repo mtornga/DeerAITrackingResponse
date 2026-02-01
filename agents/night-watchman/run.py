@@ -119,7 +119,7 @@ def build_prompt() -> str:
 
 **Instructions**: Read and follow the instructions in {skill_path}
 
-Complete all 6 steps. Send Agent Mail progress messages at each step start. Use batched bash/jq commands."""
+Complete all steps. Send only Patrol Starting and Patrol Complete via Agent Mail. Use batched bash/jq commands."""
 
 
 def check_mcp_server() -> bool:

@@ -232,10 +232,11 @@ def build_codex_prompt(
         "   - sender_name: {agent_name}\n"
         "   - to: {recipients}\n"
         "   - thread_id: {thread_id}\n"
-        "   - body_md: include health, backlog, detections, frame exam, training queue size "
-        "(use training_queue.queue_size from the snapshot when available, e.g., "
-        "'Training Queue: 7 clips queued' or 'Training Queue: 0 clips queued'), "
-        "and the digest path.\n\n"
+        "   - body_md: include health, backlog, pushover status + capture lag "
+        "(use pushover.status and pushover.lag_human when present), "
+        "detections, frame exam, training queue size (use training_queue.queue_size "
+        "from the snapshot when available, e.g., 'Training Queue: 7 clips queued' "
+        "or 'Training Queue: 0 clips queued'), and the digest path.\n\n"
         "5) Fetch inbox for {agent_name} with mcp__mcp_agent_mail__fetch_inbox and "
         "acknowledge any messages with ack_required=true using "
         "mcp__mcp_agent_mail__acknowledge_message.\n\n"
@@ -319,11 +320,21 @@ def build_fallback_body(snapshot: Dict[str, Any], agent_name: str, digest_path: 
     detections = snapshot.get("detections", {})
     frame_exam = snapshot.get("frame_exam") or {}
     pipeline = snapshot.get("pipeline", {})
+    pushover = snapshot.get("pushover", {})
     training_queue = snapshot.get("training_queue", {})
     queue_size = training_queue.get("queue_size")
     if queue_size is None:
         queue_size = len(training_queue.get("queued", []))
     errors = snapshot.get("errors", [])
+    pushover_status = pushover.get("status", "UNKNOWN")
+    pushover_sent = pushover.get("last_sent_local") or pushover.get("last_sent_utc")
+    pushover_lag = pushover.get("lag_human")
+    if pushover_lag is None and pushover.get("lag_seconds") is not None:
+        pushover_lag = f"{pushover['lag_seconds']:.0f}s"
+    if not pushover_sent:
+        pushover_sent = "unknown"
+    if not pushover_lag:
+        pushover_lag = "n/a"
 
     frame_summary = "No events to examine"
     if frame_exam:
@@ -336,6 +347,7 @@ def build_fallback_body(snapshot: Dict[str, Any], agent_name: str, digest_path: 
         "## Day Watchman Patrol Complete (Deterministic Fallback)",
         "",
         f"Health: {format_disk_summary(snapshot)}; Pipeline {pipeline.get('summary', 'UNKNOWN')}",
+        f"Pushover: {pushover_status} (last {pushover_sent}, lag {pushover_lag})",
         (
             f"Backlog: {pending_count} pending of {analysis_total} "
             f"({backlog.get('status', 'UNKNOWN')})"
@@ -351,6 +363,9 @@ def build_fallback_body(snapshot: Dict[str, Any], agent_name: str, digest_path: 
 
     if errors:
         body_lines.insert(8, f"Errors: {len(errors)} (see digest)")
+
+    if pushover_status == "ERROR" and pushover.get("last_error"):
+        body_lines.insert(4, f"Pushover error: {pushover.get('last_error')}")
 
     diagnosis = backlog.get("diagnosis")
     if diagnosis:
@@ -382,6 +397,7 @@ def write_fallback_analysis(
         "Snapshot summary:",
         f"- Health: {format_disk_summary(snapshot)}",
         f"- Pipeline: {snapshot.get('pipeline', {}).get('summary', 'UNKNOWN')}",
+        f"- Pushover: {snapshot.get('pushover', {}).get('status', 'UNKNOWN')}",
         f"- Backlog: {pending_count} pending of {analysis_total} "
         f"({backlog.get('status', 'UNKNOWN')})",
         f"- Detections: {snapshot.get('detections', {}).get('total_segments', 0)}",

@@ -3,7 +3,7 @@
 Deterministic patrol tasks that mirror the Night Watchman flow. A Codex reporter
 reads the snapshot + digest and sends the final report via MCP Agent Mail.
 
-## Steps (8)
+## Steps (9)
 Collector (deterministic):
 1. Register agent and announce patrol start.
 2. Health check: disk usage and `scripts/pipeline_health_check.py --lighting day`.
@@ -12,10 +12,11 @@ Collector (deterministic):
 4. Detection summary: scan today + yesterday event segments for counts and confidence.
 5. Frame examination: analyze the highest-confidence segment's metadata for movement.
 6. Training queue: copy up to 6 deer/person segments into `/srv/deer-share/training_queue/`.
-7. Write digest log and snapshot JSON.
+7. Pushover check: confirm notifications are flowing and compute capture->notify lag.
+8. Write digest log and snapshot JSON.
 
 Reporter (Codex):
-8. Read snapshot + digest, write analysis notes, send final report via MCP Agent Mail, then check inbox.
+9. Read snapshot + digest, write analysis notes, send final report via MCP Agent Mail, then check inbox.
 
 ## Outputs
 - Digest log: `runs/logs/watchman/day-watchman-YYYY-MM-DD.md`
@@ -32,13 +33,16 @@ Reporter (Codex):
 - `DAYWATCHMAN_MCP_URL` (default: http://127.0.0.1:8765/mcp/)
 - `DAYWATCHMAN_MCP_TOKEN` (optional bearer token)
 - `DAYWATCHMAN_TO` (comma-separated recipients; defaults to agent itself)
-- `DAYWATCHMAN_PROGRESS_MAIL` (set to true to send step-by-step mail)
+- `DAYWATCHMAN_PROGRESS_MAIL` (set to true to send the Patrol Starting notice)
 - `DAYWATCHMAN_HEALTH_TIMEOUT` (default: 600 seconds)
 - `DAYWATCHMAN_MAX_QUEUE` (default: 6)
 - `DAYWATCHMAN_ANALYSIS_DIR` (default: /srv/deer-share/runs/live/analysis)
 - `DAYWATCHMAN_DETECTIONS_DIR` (default: /srv/deer-share/runs/live/detections)
 - `DAYWATCHMAN_EVENTS_DIR` (default: /srv/deer-share/runs/live/events)
 - `DAYWATCHMAN_QUEUE_DIR` (default: /srv/deer-share/training_queue)
+- `DAYWATCHMAN_DETECTOR_LOG` (default: /srv/deer-share/runs/live/logs/detector.log)
+- `DAYWATCHMAN_PUSHOVER_STALE_HOURS` (default: 24)
+- `DAYWATCHMAN_PUSHOVER_LOG_LINES` (default: 5000)
 
 ## Cron
 Use `agents/daywatchman/cron.example` for a 3pm Central schedule.
