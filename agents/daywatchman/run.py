@@ -743,6 +743,7 @@ def build_snapshot(
         ),
         "training_queue": {
             "queued": queue_report.queued,
+            "queued_count": len(queue_report.queued),
             "queue_size": queue_report.queue_size,
         },
         "errors": errors,
@@ -1197,7 +1198,8 @@ def run_patrol(args: argparse.Namespace) -> int:
                 f"Backlog: {backlog_count} pending of {analysis_count} ({backlog_status})\n"
                 f"Detections: {len(segments)} segments\n"
                 f"Frame Exam: {format_frame_exam_summary(frame_exam)}\n"
-                f"Training Queue: {queue_report.queue_size} clips queued\n\n"
+                f"Training Queue: +{len(queue_report.queued)} this run, "
+                f"{queue_report.queue_size} total\n\n"
                 f"Digest: {digest_path}\n\n"
                 f"-- {args.agent_name} @ {start_time.strftime('%Y-%m-%d %H:%M:%S %Z')}"
             ),
@@ -1217,7 +1219,10 @@ def run_patrol(args: argparse.Namespace) -> int:
     log(f"Backlog: {backlog_count} pending of {analysis_count} ({backlog_status})")
     log(f"Detections: {len(segments)} segments")
     log(f"Frame Exam: {format_frame_exam_summary(frame_exam)}")
-    log(f"Training Queue: {queue_report.queue_size} queued")
+    log(
+        f"Training Queue: +{len(queue_report.queued)} this run, "
+        f"{queue_report.queue_size} total"
+    )
     if errors:
         log(f"Errors: {len(errors)} (see digest)", "WARN")
 

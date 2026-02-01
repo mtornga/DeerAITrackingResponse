@@ -1,0 +1,111 @@
+# Project Analysis and Weekly Plan
+
+## Current State Analysis
+
+**How does the current bevy of files meet the challenges?**
+
+The current state is **partially aligned but disjointed**. 
+
+*   **Local (Mac):** The `DEERAITRACKINGRESPONSE` directory contains the most recent documentation (`NewNotes.txt`, `README.md`) and a structured layout (`scripts`, `perception`, `calibration`, etc.). It appears to be the "brain" or "control center".
+*   **Remote (Ubuntu):** The `~/projects/deer-vision/` directory seems cluttered, primarily containing a `tmp` directory with external tools (`MegaDetector`, `yolov5`, `ai4eutils`) and a `ui` folder. It lacks the structured logic found on the Mac.
+*   **Gap:** There is a significant divergence. The Ubuntu machine (the "muscle" with the GPU) does not seem to have the latest code or structure to execute the vision tasks defined on the Mac. The `NewNotes.txt` vision of agents autonomously using the GPU is hindered by this lack of synchronization and structure.
+
+## Restructuring Proposal
+
+**How should we restructure the project across machines and directories?**
+
+We should move towards a **Unified Controller-Worker Architecture**.
+
+1.  **Mirror Structure:** The file structure on the Ubuntu machine should mirror the local `DEERAITRACKINGRESPONSE` (likely renaming `deer-vision` to match or syncing contents). This ensures scripts and paths are consistent.
+2.  **Centralized Code, Distributed Data:** Keep the code in git/sync. Keep heavy data (video clips, weights) on the Samba share (`/srv/deer-share`) or S3, mounted/accessible by both.
+3.  **External Tools Management:** Move the contents of `tmp` (like `yolov5`, `MegaDetector`) into a dedicated `external` or `tools` directory, properly ignored by git but accessible for import/usage.
+4.  **Execution Flow:** 
+    *   **Mac:** Runs the "Agent" logic, high-level orchestration, and user review (Streamlit/CVAT).
+    *   **Ubuntu:** Runs the heavy compute (inference, training) via SSH commands triggered by the Mac or autonomous agents.
+
+## 10-Step Medium-Level Plan
+
+This plan focuses on bridging the gap between the Mac (Control) and Ubuntu (Compute) to enable the workflow described in `NewNotes.txt`.
+
+1.  **Standardize Remote Directory:** Rename/Archive the current `~/projects/deer-vision` on Ubuntu. Create a clean `~/projects/DeerAITrackingResponse` that mirrors the local structure.
+    - Status: Local Mac repo (`DeerAITrackingResponse`, branch `main`) is now clean and pushed to GitHub; safe to treat as canonical structure.
+    - TODO (remote): SSH to Ubuntu and rename the old directory (e.g., `mv ~/projects/deer-vision ~/projects/deer-vision-legacy`) so new work starts in a fresh tree.
+    - TODO (remote): Create `~/projects/DeerAITrackingResponse` as the new root for all CV/ML code (will be populated by `git clone` in Step 2).
+    - Note: Keep `*-legacy` around temporarily in case we need to scavenge scripts or configs from older experiments.
+
+2.  **Sync Codebase:** Push the local `DEERAITRACKINGRESPONSE` code to the new remote directory (via git or rsync for now) to ensure the Ubuntu machine has the latest scripts and `perception` modules.
+    - Status: Latest `main` is already pushed to `git@github.com:mtornga/DeerAITrackingResponse.git` with large datasets excluded from git history.
+    - TODO (remote): From Ubuntu, run `cd ~/projects && git clone git@github.com:mtornga/DeerAITrackingResponse.git` so structure mirrors the Mac.
+    - TODO (remote): Verify key folders exist after clone: `scripts/`, `perception/`, `calibration/`, `outdoor/`, `demo/`.
+    - Future refinement: Decide whether to rely purely on `git` for code or keep an `rsync` helper for quick one-off syncs during heavy iteration.
+
+3.  **Environment Unification:** Create a setup script to install `requirements.txt` on the Ubuntu machine, ensuring the python environment matches the Mac's expectations.
+    - Plan: Encapsulate the AGENTS instructions into a reusable script, e.g. `scripts/setup_env_remote.sh`.
+    - Status (repo): `scripts/setup_env_remote.sh` now exists; it creates `.venv` under the repo root, upgrades `pip`, installs the pinned core stack from `constraints.txt`, then installs the rest of `requirements.txt`.
+    - Status (remote): The setup script has been run on Ubuntu in `~/projects/DeerAITrackingResponse`, creating a `.venv` (~5.2G) with `torch==2.2.2+cu121`, `opencv-python==4.8.1`, and GPU support (`torch.cuda.is_available() == True`).
+    - TODO (remote): Ensure any shell helpers (`deervision_dashboard_tmux.sh`, cron jobs, etc.) activate `.venv` before running Python scripts (or explicitly document which env to use).
+    - Note: Capture any Ubuntu-specific packages (e.g., system `ffmpeg`, `libgl1`) in comments within the setup script for future agents.
+    - Observation: Ubuntu currently has ~7.4G under `/home/mtornga/.local/share/mamba` (mamba envs) plus small `.conda`/`.mamba` dirs; these survived our project cleanup and are a major disk consumer.
+    - Design decision: Do **not** run Python virtualenvs directly from the Samba share; network filesystems are fragile for Python envs and can cause weird import/locking issues.
+    - Space strategy: Keep active envs on the Ubuntu SSD, but consider:
+        * Archiving old/unused mamba envs from `.local/share/mamba/envs` to `/srv/deer-share/env-archives/` as compressed tarballs.
+        * Documenting a “rebuild env” path (using `constraints.txt`) so agents feel safe deleting stale envs when space runs low.
+    - Future TODO: Inventory which mamba envs are actually in use for Deer Vision vs past experiments, and record a recommended “default” env layout in `AGENTS_REMOTE.md`.
+
+4.  **External Tools Organization:** Move the useful parts of the remote `tmp` (YOLOv5, MegaDetector) into a structured `external/` directory on the remote machine and document how to reference them.
+    - Plan: Standardize on `external/` under `~/projects/DeerAITrackingResponse` for heavy third-party repos (YOLOv5, MegaDetector, ai4eutils, etc.).
+    - Observation (code): MegaDetector helpers have been updated to prefer `external/`:
+        * `scripts/live_megadetector.py` / `scripts/run_md_on_segment.py` now target `external/MegaDetector`, `external/ai4eutils`, `external/yolov5`.
+        * `scripts/mdv5_process_video.py` uses `external/yolov5`, with a backwards-compatible fallback to `tmp/yolov5` if needed.
+    - Observation (remote): On Ubuntu, `~/projects/DeerAITrackingResponse/external/` now contains fresh clones of:
+        * `external/MegaDetector` (microsoft/CameraTraps)
+        * `external/ai4eutils` (microsoft/ai4eutils)
+        * `external/yolov5` (ultralytics/yolov5)
+    - Status (repo): `.gitignore` already ignores `external/`; docs in `docs/deer_tracking_pipeline.md` now reference `external/*` instead of `tmp/*` in the example commands.
+    - TODO (remote): Run a smoke test of `scripts/run_md_on_segment.py` and/or `scripts/live_megadetector.py` once new clips are available, confirming imports succeed with the external clones.
+    - Note: Long-term, agents should call tools via thin wrappers in `scripts/` so paths like `external/yolov5` are never hard-coded in many places.
+
+5.  **Samba Share Verification:** Verify the Samba share mount on both machines. Create a test script `scripts/verify_storage.sh` that writes/reads a file from both ends to confirm shared access.
+    - Plan: Treat `/srv/deer-share` (or equivalent) as the single source of truth for heavy clips and evaluation artifacts.
+    - Status (repo): `scripts/verify_storage.sh` now exists; it loads `.env` when present, chooses a candidate share directory (preferring `DEER_SHARE_SERVER_PATH`, `DEER_SHARE_LOCAL_MOUNT`, `/srv/deer-share`, then `~/DeerShare`), writes a hostname+timestamp test file, and verifies the contents.
+    - Status (Mac): Running `scripts/verify_storage.sh` from the Mac succeeded against `~/DeerShare`, confirming read/write access to the mounted share from the controller node.
+    - Status (Ubuntu): After fixing permissions on `/srv/deer-share` so it is owned by `mtornga`, running `scripts/verify_storage.sh` from `~/projects/DeerAITrackingResponse` now succeeds, confirming read/write access from the compute node as well.
+    - Note: This step is critical for the daily-review flow in `NewNotes.txt`, since agents need reliable shared storage for new clips and annotations. With symmetric access verified, `scripts/verify_storage.sh` is the standard smoke test before exercising the pipeline.
+
+6.  **Remote Execution Prototype:** Create a script `scripts/run_remote_inference.sh` on the Mac that successfully triggers a simple python script on the Ubuntu machine (e.g., "Hello GPU") via SSH.
+    - Plan: Use passwordless SSH (key-based auth) from Mac to Ubuntu so agents can safely trigger remote jobs.
+    - Status (repo): `scripts/run_remote_inference.sh` now exists; it loads `.env` for `DEERVISION_UBUNTU_*`, falls back to `mtornga@192.168.68.71`, and assumes `/home/<user>/projects/DeerAITrackingResponse` as the canonical remote repo path (ignoring legacy `deer-vision` paths).
+    - Status (remote): `scripts/hello_gpu.py` is checked into the repo; it prints the torch version, whether CUDA is available, and basic GPU device info when running under the project `.venv`.
+    - Status (end-to-end): Running `scripts/run_remote_inference.sh` from the Mac successfully SSHs to Ubuntu, activates `.venv`, and reports `torch 2.2.2+cu121` with `cuda_available=True` on the RTX 3080.
+    - Note: This is the first concrete bridge from the "controller" Mac to the "muscle" Ubuntu, enabling the agent workflows described in `NewNotes.txt`. Future agents can treat this script as the template for more complex remote jobs.
+
+7.  **Daily Review Workflow Skeleton:** Create a placeholder script `scripts/daily_review.py` that simulates the "morning review" process: finding new clips on the share, and listing them for the user.
+    - Vision: At 8–9am, mtornga sits down and is presented with a prioritized list of clips needing input (false positives, misses, edge cases, labeling opportunities) instead of hunting through directories.
+    - Status (pipeline): The ingest (`reolink_stream_ingest.py`) and live detector (`live_megadetector.py`) now write segments and MegaDetector-style JSON into `/srv/deer-share/runs/live/{analysis,detections,events}`, with eventful clips promoted into `events/` along with `detections.json` and `meta.json`.
+    - Status (index/CLI): `scripts/daily_review.py` maintains `/srv/deer-share/index/daily_review_index.json`, tracking per-clip state (clip_id, path, capture time, detector model name, `max_conf`, human-applied `tags`, `review_status`). It can filter by `status`, `events-only`, and `min-max-conf`, and groups clips by local hour.
+    - Status (UI): `scripts/daily_review_app.py` provides a Streamlit-based morning review UI:
+        * Left: time-bucketed list of clips, filtered to eventful segments above a confidence threshold.
+        * Right: embedded video player, editable `review_status`, editable semantic `tags`, and free-form `notes`.
+        * Reads detector-derived labels from `meta.json` but keeps them separate from human tags.
+    - Tag vocabulary: The UI sidebar exposes a simple “tag vocabulary” manager (e.g., `easy_eval`, `snow`, `lawnmower`), persisted alongside the index so future agents can reuse the same tag set.
+    - Next evolution: Use these human labels downstream (e.g., to define “hard eval” sets, drive retraining, or bias future ranking), and eventually add richer UI affordances (thumbnails, keyboard shortcuts) once the core review loop feels right.
+
+8.  **Dashboard Update:** Update `scripts/deervision_dashboard_tmux.sh` to point to the new remote directory paths and verify it correctly reports Ubuntu status.
+    - Idea: Dashboard should assume `~/projects/DeerAITrackingResponse` as the default root on Ubuntu going forward.
+    - Status: COMPLETE. Script already defaults to `/home/${UBUNTU_USER}/projects/DeerAITrackingResponse` (line 31).
+
+9.  **Agent Access Config:** Create a `AGENTS_REMOTE.md` file specifically for agents, detailing the SSH commands, paths, and constraints for using the Ubuntu server autonomously.
+    - Idea: This document becomes the contract for future agents (what they may run, where data lives, and safety constraints).
+    - Status: COMPLETE. `AGENTS_REMOTE.md` created with SSH patterns, environment activation, common tasks, safety constraints, and disk management guidelines.
+
+10. **Documentation Sync:** Update `README.md` to reflect the new unified structure, the role of the `external` directory, and the standard commands for remote execution.
+    - Status: PARTIAL. Fixed stale `deer-vision` path reference. `CLAUDE.md` added with comprehensive project context.
+    - Note: Keep `README.md` focused on onboarding humans; cross-link deeper agent instructions to `AGENTS.md` and `AGENTS_REMOTE.md`.
+    - Future TODO: Fold the Medium-level plan and NewNotes vision into a concise "Architecture" and "Daily Workflow" section in README.
+
+11. **Disk Hygiene / Env Consolidation:** Reduce root disk pressure by consolidating Python environments and relocating heavy scratch data.
+    - Status: COMPLETE. Root disk now at 40% (186G/492G). Legacy mamba env already removed.
+    - Policy: Treat `.venv` in `~/projects/DeerAITrackingResponse` as the *only* supported Deer Vision runtime env.
+    - Documented in `AGENTS_REMOTE.md`: disk management guidelines and cleanup procedures.
+    - Future TODO (ops): Mount `/srv/deer-share` on the dedicated USB drive (UUID `F04815E200F815F8`) so it becomes a true separate volume for clips, CVAT exports, and other heavy assets.
+    - Future TODO (repo): Document a layout where heavy scratch directories (e.g., `cvat-share`, `runs/`, `external/`) live on `/srv/deer-share` with symlinks from `~/projects`, allowing agents to move space-hungry artifacts off the root disk without breaking paths.

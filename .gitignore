@@ -44,6 +44,7 @@ cvat-indoor/
 outdoor/eval_clips/
 outdoor/deer-vision/data/raw/
 outdoor/deer-vision/data/interim/
+outdoor/deer-vision/data/datasets/
 perception/*.json
 
 # Allowlist - Golden Datasets & Documentation Assets

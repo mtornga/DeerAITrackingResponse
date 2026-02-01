@@ -236,7 +236,7 @@ fi
 
 ## Step 3: Queue for Training
 
-Then run:
+Then run (capture both the number added this run and the total queue size after queuing):
 ```bash
 mkdir -p /srv/deer-share/training_queue
 EVENTS_DIR="/srv/deer-share/runs/live/events"
@@ -259,7 +259,9 @@ for DATE in $TODAY $YESTERDAY; do
     fi
   done
 done
-echo "Total queued: $QUEUED"
+echo "Added this run: $QUEUED"
+TOTAL_QUEUE=$(find /srv/deer-share/training_queue -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
+echo "Total in queue: $TOTAL_QUEUE"
 ```
 
 ---
@@ -302,7 +304,8 @@ Use Write tool to create `/home/mtornga/projects/DeerAITrackingResponse/runs/log
 - Assessment: [✅ Likely real animal / ⚠️ Possible false positive / 🔍 Inconclusive]
 
 ## Training Queue
-- Queued: [N] clips to /srv/deer-share/training_queue/
+- Added this run: [N] clips
+- Total in queue: [N] clips
 ```
 
 ---
@@ -321,7 +324,7 @@ Send final summary:
   **Backlog**: [N] clips [✅ OK / ⚠️ WARNING / 🔴 CRITICAL] [if CRITICAL: - detector NOT RUNNING]
   **Detections**: [N] events ([N] deer, [N] person)
   **Frame Exam**: [segment_XXXXXX] - [assessment emoji + reason] (x_std=[value], [duration]s)
-  **Training Queue**: [N] clips queued
+  **Training Queue**: +[N] this run, [N] total
 
   Digest: runs/logs/watchman/YYYY-MM-DD.md
 

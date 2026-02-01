@@ -234,9 +234,10 @@ def build_codex_prompt(
         "   - thread_id: {thread_id}\n"
         "   - body_md: include health, backlog, pushover status + capture lag "
         "(use pushover.status and pushover.lag_human when present), "
-        "detections, frame exam, training queue size (use training_queue.queue_size "
-        "from the snapshot when available, e.g., 'Training Queue: 7 clips queued' "
-        "or 'Training Queue: 0 clips queued'), and the digest path.\n\n"
+        "detections, frame exam, training queue contribution and total "
+        "(use training_queue.queued_count and training_queue.queue_size from the "
+        "snapshot when available, e.g., 'Training Queue: +3 this run, 45 total'), "
+        "and the digest path.\n\n"
         "5) Fetch inbox for {agent_name} with mcp__mcp_agent_mail__fetch_inbox and "
         "acknowledge any messages with ack_required=true using "
         "mcp__mcp_agent_mail__acknowledge_message.\n\n"
@@ -325,6 +326,9 @@ def build_fallback_body(snapshot: Dict[str, Any], agent_name: str, digest_path: 
     queue_size = training_queue.get("queue_size")
     if queue_size is None:
         queue_size = len(training_queue.get("queued", []))
+    queued_count = training_queue.get("queued_count")
+    if queued_count is None:
+        queued_count = len(training_queue.get("queued", []))
     errors = snapshot.get("errors", [])
     pushover_status = pushover.get("status", "UNKNOWN")
     pushover_sent = pushover.get("last_sent_local") or pushover.get("last_sent_utc")
@@ -354,7 +358,7 @@ def build_fallback_body(snapshot: Dict[str, Any], agent_name: str, digest_path: 
         ),
         f"Detections: {detections.get('total_segments', 0)} segments",
         f"Frame Exam: {frame_summary}",
-        f"Training Queue: {queue_size} clips queued",
+        f"Training Queue: +{queued_count} this run, {queue_size} total",
         "",
         f"Digest: {digest_path}",
         "",

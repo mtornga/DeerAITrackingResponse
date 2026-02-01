@@ -21,9 +21,6 @@
     ]
   },
   "enableAllProjectMcpServers": true,
-  "enabledMcpjsonServers": [
-    "context7"
-  ],
   "statusLine": {
     "type": "command",
     "command": "~/.claude/scripts/context-bar.sh"
