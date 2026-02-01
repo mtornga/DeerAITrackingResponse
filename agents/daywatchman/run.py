@@ -32,6 +32,10 @@ VERBOSE = False
 DEFAULT_AGENT_NAME = os.environ.get("DAYWATCHMAN_AGENT", "BrightHeron")
 DEFAULT_THREAD_ID = os.environ.get("DAYWATCHMAN_THREAD", "DAY-WATCHMAN")
 DEFAULT_MCP_URL = os.environ.get("DAYWATCHMAN_MCP_URL", "http://127.0.0.1:8765/mcp/")
+DEFAULT_QUEUE_ENRICHER_THREAD = os.environ.get(
+    "DAYWATCHMAN_QUEUE_ENRICHER_THREAD",
+    "QUEUE-ENRICHER",
+)
 DEFAULT_HEALTH_TIMEOUT = int(os.environ.get("DAYWATCHMAN_HEALTH_TIMEOUT", "600"))
 DEFAULT_MAX_QUEUE = int(os.environ.get("DAYWATCHMAN_MAX_QUEUE", "6"))
 DEFAULT_LOGS_DIRNAME = "runs/logs/watchman"
@@ -483,10 +487,89 @@ def analyze_frame(segment: SegmentInfo) -> FrameExam:
     )
 
 
+def extract_note_suffix(segment_name: str) -> Optional[str]:
+    match = re.match(r"^(segment_\\d+)(.+)$", segment_name)
+    if match:
+        suffix = match.group(2).strip()
+        return suffix or None
+    return None
+
+
+def select_model_name(meta: Dict[str, Any]) -> Optional[str]:
+    routing = meta.get("routing")
+    if isinstance(routing, dict):
+        votes = routing.get("votes")
+        if isinstance(votes, list) and votes:
+            first_vote = votes[0]
+            if isinstance(first_vote, dict):
+                model = first_vote.get("model")
+                if isinstance(model, str) and model:
+                    return model
+    models = meta.get("models")
+    if isinstance(models, dict) and models:
+        return next(iter(models.keys()))
+    return None
+
+
+def build_queue_meta(
+    segment: SegmentInfo,
+    queued_by: str,
+    queued_at: datetime,
+) -> Dict[str, Any]:
+    queue_name = f"{segment.date}_{segment.segment}"
+    note_suffix = extract_note_suffix(segment.segment)
+    model_name = select_model_name(segment.meta)
+    routing = segment.meta.get("routing")
+    routing_summary: Optional[Dict[str, Any]] = None
+    if isinstance(routing, dict):
+        routing_summary = {
+            "decision": routing.get("decision"),
+            "confidence_score": routing.get("confidence_score"),
+        }
+
+    queue_meta: Dict[str, Any] = {
+        "schema_version": 1,
+        "queue": {
+            "segment_id": queue_name,
+            "source_path": str(segment.path),
+            "queued_by": queued_by,
+            "queued_at": format_utc(queued_at),
+        },
+        "meta_summary": {
+            "model_name": model_name,
+            "max_confidence": segment.confidence,
+            "counts": segment.meta.get("counts") or {},
+            "routing": routing_summary,
+        },
+    }
+    if note_suffix:
+        queue_meta["queue"]["note_suffix"] = note_suffix
+    return queue_meta
+
+
+def write_queue_meta(
+    dest: Path,
+    segment: SegmentInfo,
+    queued_by: str,
+    queued_at: datetime,
+    errors: List[str],
+) -> None:
+    meta_path = dest / "queue_meta.json"
+    if meta_path.exists():
+        return
+    try:
+        payload = build_queue_meta(segment, queued_by=queued_by, queued_at=queued_at)
+        meta_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    except Exception as exc:  # pragma: no cover - filesystem issues
+        errors.append(f"Failed to write {meta_path}: {exc}")
+
+
 def queue_for_training(
     segments: List[SegmentInfo],
     max_queue: int,
     dry_run: bool,
+    queued_by: str,
+    queued_at: datetime,
     errors: List[str],
 ) -> QueueReport:
     queued: List[str] = []
@@ -502,6 +585,13 @@ def queue_for_training(
             if dest.exists():
                 continue
             shutil.copytree(segment.path, dest)
+            write_queue_meta(
+                dest=dest,
+                segment=segment,
+                queued_by=queued_by,
+                queued_at=queued_at,
+                errors=errors,
+            )
             queued.append(queue_name)
     queue_size = count_training_queue(QUEUE_DIR, errors)
     return QueueReport(queued=queued, queue_size=queue_size)
@@ -975,6 +1065,41 @@ def send_message_safe(
         log(f"Mail error: {exc}", "WARN")
 
 
+def send_queue_enricher_trigger(
+    client: Optional[MCPClient],
+    project_key: str,
+    sender: str,
+    recipients: List[str],
+    thread_id: str,
+    queue_report: QueueReport,
+    queued_at: datetime,
+    queue_dir: Path,
+    skip_mail: bool,
+    errors: List[str],
+) -> None:
+    if skip_mail or client is None:
+        return
+    if not queue_report.queued:
+        return
+    payload = {
+        "queued_by": sender,
+        "queued_at": format_utc(queued_at),
+        "queue_dir": str(queue_dir),
+        "clips": queue_report.queued,
+    }
+    send_message_safe(
+        client,
+        project_key,
+        sender,
+        recipients,
+        "Training Queue Enrichment Requested",
+        "```json\n" + json.dumps(payload, indent=2) + "\n```",
+        thread_id,
+        skip_mail,
+        errors,
+    )
+
+
 def register_agent_safe(
     client: Optional[MCPClient],
     project_key: str,
@@ -1069,6 +1194,10 @@ def run_patrol(args: argparse.Namespace) -> int:
     args.progress_mail = args.progress_mail or DEFAULT_PROGRESS_MAIL
 
     recipients = parse_recipients(args.recipients, args.agent_name)
+    enricher_recipients = parse_recipients(
+        args.queue_enricher_recipients,
+        recipients[0],
+    )
     token = os.environ.get("DAYWATCHMAN_MCP_TOKEN")
     client = MCPClient(args.mcp_url, timeout=10, token=token)
 
@@ -1129,7 +1258,27 @@ def run_patrol(args: argparse.Namespace) -> int:
 
     frame_exam = analyze_frame(best_segment) if best_segment else None
 
-    queue_report = queue_for_training(segments, args.max_queue, args.dry_run, errors)
+    queue_report = queue_for_training(
+        segments=segments,
+        max_queue=args.max_queue,
+        dry_run=args.dry_run,
+        queued_by=args.agent_name,
+        queued_at=start_time,
+        errors=errors,
+    )
+
+    send_queue_enricher_trigger(
+        client=client,
+        project_key=str(repo_root),
+        sender=args.agent_name,
+        recipients=enricher_recipients,
+        thread_id=args.queue_enricher_thread,
+        queue_report=queue_report,
+        queued_at=start_time,
+        queue_dir=QUEUE_DIR,
+        skip_mail=skip_mail,
+        errors=errors,
+    )
 
     pushover_report = collect_pushover_report(DEFAULT_DETECTOR_LOG, start_time, errors)
 
@@ -1251,6 +1400,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--thread-id", default=DEFAULT_THREAD_ID)
     parser.add_argument("--mcp-url", default=DEFAULT_MCP_URL)
     parser.add_argument("--recipients", default=os.environ.get("DAYWATCHMAN_TO"))
+    parser.add_argument(
+        "--queue-enricher-thread",
+        default=DEFAULT_QUEUE_ENRICHER_THREAD,
+        help="Thread ID for queue enricher trigger messages",
+    )
+    parser.add_argument(
+        "--queue-enricher-recipients",
+        default=os.environ.get("DAYWATCHMAN_QUEUE_ENRICHER_TO"),
+        help="Comma-separated MCP Agent Mail recipients for queue enricher",
+    )
     return parser
 
 

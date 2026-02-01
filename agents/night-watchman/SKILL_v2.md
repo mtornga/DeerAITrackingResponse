@@ -14,10 +14,11 @@ You are **CalmEagle**, the Night Watchman patrol agent.
 
 ## CRITICAL: Agent Mail Volume
 
-Only send two Agent Mail messages per patrol:
+Send at most three Agent Mail messages per patrol:
 - "Patrol Starting" at Step 0
+- "Queue Enricher Trigger" only if clips were queued (Step 3.5)
 - "Patrol Complete" in the final report
-Do not send step-by-step progress updates.
+Do not send step-by-step progress updates beyond these.
 
 ## Step 0: Register & Announce Start
 
@@ -254,8 +255,42 @@ for DATE in $TODAY $YESTERDAY; do
     if [ "$HAS_TARGET" = "yes" ]; then
       SEGMENT=$(basename "$SEG")
       QUEUE_NAME="${DATE}_${SEGMENT}"
-      [ -d "/srv/deer-share/training_queue/$QUEUE_NAME" ] && continue
-      cp -r "$SEG" "/srv/deer-share/training_queue/$QUEUE_NAME" && echo "Queued: $QUEUE_NAME" && QUEUED=$((QUEUED + 1))
+      DEST="/srv/deer-share/training_queue/$QUEUE_NAME"
+      [ -d "$DEST" ] && continue
+      cp -r "$SEG" "$DEST" && echo "Queued: $QUEUE_NAME" && QUEUED=$((QUEUED + 1))
+      if [ -f "$DEST/meta.json" ] && [ ! -f "$DEST/queue_meta.json" ]; then
+        QUEUED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+        MODEL_NAME=$(jq -r '.model_name // .model // .models[0].name // "unknown"' "$DEST/meta.json" 2>/dev/null)
+        MAX_CONF=$(jq -r '.max_confidence // .confidence // .routing.confidence_score // 0' "$DEST/meta.json" 2>/dev/null)
+        COUNTS_JSON=$(jq '.counts // {}' "$DEST/meta.json" 2>/dev/null)
+        ROUTING_JSON=$(jq '.routing // {}' "$DEST/meta.json" 2>/dev/null)
+        jq -n \
+          --arg segment_id "${DATE}_${SEGMENT}" \
+          --arg source_path "$SEG" \
+          --arg queued_by "NightWatchman" \
+          --arg queued_at "$QUEUED_AT" \
+          --arg note_suffix "" \
+          --arg model_name "$MODEL_NAME" \
+          --argjson counts "$COUNTS_JSON" \
+          --argjson routing "$ROUTING_JSON" \
+          --arg max_confidence "$MAX_CONF" \
+          '{
+            schema_version: 1,
+            queue: {
+              segment_id: $segment_id,
+              source_path: $source_path,
+              queued_by: $queued_by,
+              queued_at: $queued_at,
+              note_suffix: $note_suffix
+            },
+            meta_summary: {
+              model_name: $model_name,
+              max_confidence: ($max_confidence | tonumber? // 0),
+              counts: $counts,
+              routing: $routing
+            }
+          }' > "$DEST/queue_meta.json"
+      fi
     fi
   done
 done
@@ -263,6 +298,28 @@ echo "Added this run: $QUEUED"
 TOTAL_QUEUE=$(find /srv/deer-share/training_queue -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')
 echo "Total in queue: $TOTAL_QUEUE"
 ```
+
+---
+
+## Step 3.5: Trigger Queue Enricher (only if QUEUED > 0)
+
+If `Added this run` is greater than 0, send a queue-enricher trigger message.
+
+**Tool**: `mcp__mcp-agent-mail__send_message`
+- project_key: "/home/mtornga/projects/DeerAITrackingResponse"
+- sender_name: "CalmEagle"
+- to: ["CalmEagle"]
+- subject: "Training Queue Enrichment Requested"
+- body_md: a JSON code block with:
+  - queued_by: "CalmEagle"
+  - queued_at: current UTC time (RFC3339, e.g. 2026-02-01T22:15:04Z)
+  - queue_dir: "/srv/deer-share/training_queue"
+  - clips: the queued directory names from Step 3
+- thread_id: "QUEUE-ENRICHER"
+- importance: "normal"
+- ack_required: false
+
+Skip this step if `Added this run` is 0.
 
 ---
 

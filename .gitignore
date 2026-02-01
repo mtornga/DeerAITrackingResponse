@@ -66,3 +66,6 @@ perception/*.json
 
 # Allow specific small images if they are critical (Documentation)
 # (Moving loose images to docs/assets is recommended, but for now we ignore root images unless specified)
+
+# bv (beads viewer) local config and caches
+.bv/
