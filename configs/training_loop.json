@@ -16,7 +16,7 @@
   "golden_min_coverage": 0.8,
   "golden_caps": {
     "day_deer": 1200,
-    "night_deer": 800,
+    "night_deer": 1400,
     "day_person": 900,
     "night_person": 150,
     "other_wildlife": 200,

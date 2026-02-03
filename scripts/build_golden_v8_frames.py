@@ -33,7 +33,15 @@ REPO_ROOT = _ensure_repo_root_on_path()
 if str(REPO_ROOT / "agents") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "agents"))
 
-from training_loop_utils import choose_split, load_json, resolve_share_root
+from training_loop_utils import (
+    choose_split,
+    extract_best_bbox,
+    extract_frames,
+    find_video_file,
+    load_json,
+    resolve_share_root,
+    write_label_files,
+)
 
 
 ALLOWED_CLASS_IDS = {0, 1}
@@ -51,12 +59,23 @@ class FrameEntry:
 
 
 @dataclass
+class ClipEntry:
+    entry_id: str
+    klass: str
+    lighting: str
+    source: str
+    clip_path: Path
+
+
+@dataclass
 class BuildStats:
     total_entries: int = 0
     selected_entries: int = 0
     copied_images: int = 0
     copied_labels: int = 0
     empty_labels: int = 0
+    extracted_clips: int = 0
+    extracted_frames: int = 0
     per_group: Dict[str, int] = field(default_factory=dict)
 
 
@@ -77,42 +96,66 @@ def manifest_hash(path: Path) -> Optional[str]:
     return hashlib.md5(data).hexdigest()
 
 
-def load_manifest_entries(path: Path) -> List[FrameEntry]:
+def load_manifest_entries(path: Path, share_root: Path) -> Tuple[List[FrameEntry], List[ClipEntry]]:
     payload = load_json(path) or {}
     entries = payload.get("entries", [])
     if not isinstance(entries, list):
-        return []
+        return [], []
     results: List[FrameEntry] = []
+    clips: List[ClipEntry] = []
     for entry in entries:
         if not isinstance(entry, dict):
             continue
-        if entry.get("label_status") != "ok":
-            continue
         image_path = entry.get("image_path")
         label_path = entry.get("label_path")
-        if not isinstance(image_path, str) or not isinstance(label_path, str):
-            continue
-        image = Path(image_path)
-        label = Path(label_path)
-        if not image.exists() or not label.exists():
-            continue
         klass = entry.get("class")
         lighting = entry.get("lighting")
         source = entry.get("source", "unknown")
         if not isinstance(klass, str) or not isinstance(lighting, str):
             continue
-        results.append(
-            FrameEntry(
-                entry_id=str(entry.get("id", image_path)),
+        if entry.get("label_status") == "ok":
+            if not isinstance(image_path, str) or not isinstance(label_path, str):
+                continue
+            image = Path(image_path)
+            label = Path(label_path)
+            if not image.is_absolute():
+                image = share_root / image
+            if not label.is_absolute():
+                label = share_root / label
+            if not image.exists() or not label.exists():
+                continue
+            results.append(
+                FrameEntry(
+                    entry_id=str(entry.get("id", image_path)),
+                    klass=klass,
+                    lighting=lighting,
+                    source=str(source),
+                    image_path=image,
+                    label_path=label,
+                    priority=int(entry.get("priority", 3)),
+                )
+            )
+            continue
+
+        if str(source) != "golden_clips":
+            continue
+        if not isinstance(image_path, str):
+            continue
+        clip_path = Path(image_path)
+        if not clip_path.is_absolute():
+            clip_path = share_root / clip_path
+        if not clip_path.exists():
+            continue
+        clips.append(
+            ClipEntry(
+                entry_id=str(entry.get("id", clip_path.name)),
                 klass=klass,
                 lighting=lighting,
                 source=str(source),
-                image_path=image,
-                label_path=label,
-                priority=int(entry.get("priority", 3)),
+                clip_path=clip_path,
             )
         )
-    return results
+    return results, clips
 
 
 def normalize_group_key(klass: str, lighting: str) -> str:
@@ -180,6 +223,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--share-root", help="Override share root (default: auto-detect)")
     parser.add_argument("--manifest", help="Override manifest path (default configs/golden_v8_manifest.json)")
     parser.add_argument("--output-root", help="Override dataset root (default from config)")
+    parser.add_argument("--clean", action="store_true", help="Remove existing dataset before rebuild")
     parser.add_argument("--dry-run", action="store_true", help="Plan without writing files")
     return parser
 
@@ -192,7 +236,7 @@ def main() -> int:
     config = load_json(config_path) or {}
     manifest_path = Path(args.manifest) if args.manifest else (REPO_ROOT / "configs" / "golden_v8_manifest.json")
 
-    entries = load_manifest_entries(manifest_path)
+    entries, clip_entries = load_manifest_entries(manifest_path, share_root)
     stats = BuildStats(total_entries=len(entries))
 
     caps_cfg = config.get("golden_caps", {})
@@ -210,7 +254,7 @@ def main() -> int:
     if not output_root.is_absolute():
         output_root = share_root / output_root
 
-    if not entries:
+    if not entries and not clip_entries:
         print("[frames] No manifest entries found.")
         return 1
 
@@ -218,6 +262,11 @@ def main() -> int:
     for entry in entries:
         group = normalize_group_key(entry.klass, entry.lighting)
         grouped.setdefault(group, []).append(entry)
+
+    clip_grouped: Dict[str, List[ClipEntry]] = {}
+    for entry in clip_entries:
+        group = normalize_group_key(entry.klass, entry.lighting)
+        clip_grouped.setdefault(group, []).append(entry)
 
     selected: List[FrameEntry] = []
     for group, group_entries in grouped.items():
@@ -237,10 +286,17 @@ def main() -> int:
         print(json.dumps({"selected": stats.selected_entries, "groups": stats.per_group}, indent=2))
         return 0
 
+    if args.clean and output_root.exists():
+        shutil.rmtree(output_root)
     output_root.mkdir(parents=True, exist_ok=True)
+
+    val_split = float(config.get("val_split", 0.15))
+    frame_interval = int(config.get("frame_interval", 15))
+    max_frames = int(config.get("max_frames", 20))
+
     for entry in selected:
         keep_labels = entry.klass in {"deer", "person"}
-        split = choose_split(entry.entry_id, float(config.get("val_split", 0.15)))
+        split = choose_split(entry.entry_id, val_split)
         images_dir = output_root / entry.lighting / "images" / split
         labels_dir = output_root / entry.lighting / "labels" / split
         copied_image, has_labels = copy_entry(entry, images_dir, labels_dir, keep_labels)
@@ -250,6 +306,54 @@ def main() -> int:
             stats.copied_labels += 1
             if not has_labels:
                 stats.empty_labels += 1
+
+    for group, group_entries in clip_grouped.items():
+        cap = cap_for_group(caps, group)
+        if cap is None:
+            continue
+        current = stats.per_group.get(group, 0)
+        remaining = cap - current
+        if remaining <= 0:
+            continue
+        sorted_entries = sorted(group_entries, key=lambda item: stable_bucket(item.clip_path.as_posix()))
+        for entry in sorted_entries:
+            if remaining <= 0:
+                break
+            if entry.klass in {"deer", "buck", "doe", "animal"}:
+                class_id = 0
+            elif entry.klass in {"person", "people", "human"}:
+                class_id = 1
+            else:
+                continue
+            meta = load_json(entry.clip_path / "meta.json")
+            if not meta:
+                continue
+            video_path = find_video_file(entry.clip_path)
+            if not video_path:
+                continue
+            bbox = extract_best_bbox(meta)
+            if bbox is None:
+                continue
+            split = choose_split(entry.entry_id, val_split)
+            images_dir = output_root / entry.lighting / "images" / split
+            labels_dir = output_root / entry.lighting / "labels" / split
+            clip_frames = extract_frames(
+                video_path=video_path,
+                output_dir=images_dir,
+                prefix=entry.clip_path.name,
+                frame_interval=frame_interval,
+                max_frames=min(max_frames, remaining),
+            )
+            if not clip_frames:
+                continue
+            write_label_files(clip_frames, labels_dir, class_id, bbox)
+            stats.extracted_clips += 1
+            stats.extracted_frames += len(clip_frames)
+            stats.copied_images += len(clip_frames)
+            stats.copied_labels += len(clip_frames)
+            stats.selected_entries += len(clip_frames)
+            stats.per_group[group] = stats.per_group.get(group, 0) + len(clip_frames)
+            remaining -= len(clip_frames)
 
     write_dataset_yaml(output_root, "day")
     write_dataset_yaml(output_root, "night")
