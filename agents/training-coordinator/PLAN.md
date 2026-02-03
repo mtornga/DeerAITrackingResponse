@@ -17,7 +17,7 @@
 - Parse suffix notes (e.g., NightDeer, DeerTrot) as hints only.
 
 ## 3. Promote to golden with rollback metadata
-- Move/copy accepted clips into `/srv/deer-share/golden_clips/<category>/<day|night>/<clip_id>/`.
+- Move/copy accepted clips into `/srv/deer-share/golden_clips/<day|night>/<category>/<clip_id>/`.
 - For each promoted clip, write a manifest entry that includes:
   - `tc_run_id`, `tc_agent`, `queued_from`, `queued_note`, `queued_at`, `source_path`, `clip_id`, `category`, `lighting`, and any review notes.
 - Create a TC run log (e.g., `runs/logs/training_coordinator/TC-YYYYMMDD-HHMM.json`) listing all promoted clip ids + destinations + queue sources.
@@ -30,7 +30,7 @@
 ## 5. Dataset build
 - Refresh day/night golden datasets from `golden_clips` directories.
 - Keep **directory layout stable**:
-  `/srv/deer-share/golden_clips/<top_category>/<day|night>/<clip_id>/`.
+  `/srv/deer-share/golden_clips/<day|night>/<category>/<clip_id>/`.
 - Store deeper taxonomy in metadata/tags (e.g., deer/buck/sprint; false_positive/night/snow).
 - Use existing artifacts/scripts as guidance:
   - `trainingruncommand.txt` (canonical training command template).
@@ -70,7 +70,7 @@
 ## Negative mining rule (snow/precip false positives)
 - Keep a capped subset of rejected clips as **negatives** for training when:
   `triage=reject` AND `category=false_positive` AND tags include snow/rain/flies.
-- Route these to a `golden/negatives/snow` (or similar) bucket instead of dropping.
+- Route these to a `golden_clips/negatives/snow` (or similar) bucket instead of dropping.
 - Cap per TC run (e.g., 10–20) to avoid over-weighting negatives.
 
 ## Taxonomy guidance
