@@ -1,0 +1,12 @@
+{
+  "day": {
+    "clips": [],
+    "frame_interval": 15,
+    "max_frames": 10
+  },
+  "night": {
+    "clips": [],
+    "frame_interval": 15,
+    "max_frames": 10
+  }
+}

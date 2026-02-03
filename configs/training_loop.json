@@ -1,0 +1,17 @@
+{
+  "queue_threshold": 50,
+  "auto_train": true,
+  "min_map50_gain": 0.01,
+  "min_recall_delta": 0.0,
+  "val_split": 0.15,
+  "frame_interval": 15,
+  "max_frames": 20,
+  "include_negatives": true,
+  "trainer": {
+    "epochs": 80,
+    "batch": 8,
+    "imgsz": 960,
+    "base_model": "yolov8n.pt",
+    "project_dir": "/srv/deer-share/runs/train"
+  }
+}
