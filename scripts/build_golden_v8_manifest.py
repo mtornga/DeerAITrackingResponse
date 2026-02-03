@@ -59,27 +59,39 @@ def stable_id(source: str, path: str) -> str:
     return f"{source}:{digest}"
 
 
+def _tokenize(parts: List[str]) -> List[str]:
+    tokens: List[str] = []
+    for part in parts:
+        tokens.append(part)
+        for separator in ("_", "-"):
+            if separator in part:
+                tokens.extend([p for p in part.split(separator) if p])
+    return tokens
+
+
 def infer_lighting(path: Path) -> Optional[str]:
     parts = [p.lower() for p in path.parts]
-    if "night" in parts or "ir" in parts:
+    tokens = _tokenize(parts)
+    if "night" in tokens or "ir" in tokens:
         return "night"
-    if "day" in parts or "daytime" in parts:
+    if "day" in tokens or "daytime" in tokens:
         return "day"
     return None
 
 
 def infer_class(path: Path) -> Optional[str]:
     parts = [p.lower() for p in path.parts]
-    for part in parts:
-        if part in {"buck", "doe", "deer", "animal"}:
+    tokens = _tokenize(parts)
+    for token in tokens:
+        if token in {"buck", "doe", "deer", "animal"}:
             return "deer"
-        if part in {"person", "people", "human"}:
+        if token in {"person", "people", "human"}:
             return "person"
-        if part in {"other_wildlife", "wildlife"}:
+        if token in {"other_wildlife", "wildlife"}:
             return "other_wildlife"
-        if part in {"false_positive", "false"}:
+        if token in {"false_positive", "false"}:
             return "false_positive"
-        if part in {"unknown", "misc"}:
+        if token in {"unknown", "misc"}:
             return "unknown"
     return None
 
