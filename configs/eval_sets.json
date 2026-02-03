@@ -2,29 +2,166 @@
   "day": {
     "clips": [
       {
-        "path": "/srv/deer-share/golden_clips/person/day/2025-12-17_segment_182011_clip",
-        "category": "person",
-        "note": "woman and child"
-      },
-      {
-        "path": "/srv/deer-share/golden_clips/person/day/2025-12-17_segment_184103_clip",
-        "category": "person",
-        "note": "two adults two children"
-      },
-      {
-        "path": "/srv/deer-share/golden_clips/person/day/2025-12-17_180013_person",
-        "category": "person",
-        "note": "mark near deck"
-      },
-      {
-        "path": "/srv/deer-share/golden_clips/person/day/2025-12-19_segment_143801_person",
-        "category": "person",
-        "note": "sunset mark end of clip"
-      },
-      {
-        "path": "/srv/deer-share/golden_clips/buck/day/2025-12-14_deer_test_daytime",
+        "path": "/srv/deer-share/golden_clips_frames/deer_day/buck_deer_test_0001.jpg",
+        "image_path": "/srv/deer-share/golden_clips_frames/deer_day/buck_deer_test_0001.jpg",
+        "label_path": "/srv/deer-share/golden_clips_frames/labels/deer_day/buck_deer_test_0001.txt",
         "category": "deer",
-        "note": "does"
+        "lighting": "day",
+        "source": "golden_clips_frames",
+        "note": "golden_clips_frames:deer_day"
+      },
+      {
+        "path": "/srv/deer-share/golden_clips_frames/deer_day/buck_deer_test_0002.jpg",
+        "image_path": "/srv/deer-share/golden_clips_frames/deer_day/buck_deer_test_0002.jpg",
+        "label_path": "/srv/deer-share/golden_clips_frames/labels/deer_day/buck_deer_test_0002.txt",
+        "category": "deer",
+        "lighting": "day",
+        "source": "golden_clips_frames",
+        "note": "golden_clips_frames:deer_day"
+      },
+      {
+        "path": "/srv/deer-share/golden_clips_frames/deer_day/buck_deer_test_0003.jpg",
+        "image_path": "/srv/deer-share/golden_clips_frames/deer_day/buck_deer_test_0003.jpg",
+        "label_path": "/srv/deer-share/golden_clips_frames/labels/deer_day/buck_deer_test_0003.txt",
+        "category": "deer",
+        "lighting": "day",
+        "source": "golden_clips_frames",
+        "note": "golden_clips_frames:deer_day"
+      },
+      {
+        "path": "/srv/deer-share/golden_clips_frames/deer_day/buck_deer_test_0004.jpg",
+        "image_path": "/srv/deer-share/golden_clips_frames/deer_day/buck_deer_test_0004.jpg",
+        "label_path": "/srv/deer-share/golden_clips_frames/labels/deer_day/buck_deer_test_0004.txt",
+        "category": "deer",
+        "lighting": "day",
+        "source": "golden_clips_frames",
+        "note": "golden_clips_frames:deer_day"
+      },
+      {
+        "path": "/srv/deer-share/golden_clips_frames/deer_day/buck_deer_test_0005.jpg",
+        "image_path": "/srv/deer-share/golden_clips_frames/deer_day/buck_deer_test_0005.jpg",
+        "label_path": "/srv/deer-share/golden_clips_frames/labels/deer_day/buck_deer_test_0005.txt",
+        "category": "deer",
+        "lighting": "day",
+        "source": "golden_clips_frames",
+        "note": "golden_clips_frames:deer_day"
+      },
+      {
+        "path": "/srv/deer-share/golden_clips_frames/deer_day/buck_deer_test_0006.jpg",
+        "image_path": "/srv/deer-share/golden_clips_frames/deer_day/buck_deer_test_0006.jpg",
+        "label_path": "/srv/deer-share/golden_clips_frames/labels/deer_day/buck_deer_test_0006.txt",
+        "category": "deer",
+        "lighting": "day",
+        "source": "golden_clips_frames",
+        "note": "golden_clips_frames:deer_day"
+      },
+      {
+        "path": "/srv/deer-share/golden_clips_frames/deer_day/buck_deer_test_0007.jpg",
+        "image_path": "/srv/deer-share/golden_clips_frames/deer_day/buck_deer_test_0007.jpg",
+        "label_path": "/srv/deer-share/golden_clips_frames/labels/deer_day/buck_deer_test_0007.txt",
+        "category": "deer",
+        "lighting": "day",
+        "source": "golden_clips_frames",
+        "note": "golden_clips_frames:deer_day"
+      },
+      {
+        "path": "/srv/deer-share/golden_clips_frames/deer_day/buck_deer_test_0008.jpg",
+        "image_path": "/srv/deer-share/golden_clips_frames/deer_day/buck_deer_test_0008.jpg",
+        "label_path": "/srv/deer-share/golden_clips_frames/labels/deer_day/buck_deer_test_0008.txt",
+        "category": "deer",
+        "lighting": "day",
+        "source": "golden_clips_frames",
+        "note": "golden_clips_frames:deer_day"
+      },
+      {
+        "path": "/srv/deer-share/golden_clips_frames/deer_day/buck_deer_test_0009.jpg",
+        "image_path": "/srv/deer-share/golden_clips_frames/deer_day/buck_deer_test_0009.jpg",
+        "label_path": "/srv/deer-share/golden_clips_frames/labels/deer_day/buck_deer_test_0009.txt",
+        "category": "deer",
+        "lighting": "day",
+        "source": "golden_clips_frames",
+        "note": "golden_clips_frames:deer_day"
+      },
+      {
+        "path": "/srv/deer-share/golden_clips_frames/deer_day/buck_deer_test_0010.jpg",
+        "image_path": "/srv/deer-share/golden_clips_frames/deer_day/buck_deer_test_0010.jpg",
+        "label_path": "/srv/deer-share/golden_clips_frames/labels/deer_day/buck_deer_test_0010.txt",
+        "category": "deer",
+        "lighting": "day",
+        "source": "golden_clips_frames",
+        "note": "golden_clips_frames:deer_day"
+      },
+      {
+        "path": "/srv/deer-share/golden_clips_frames/person_day/person_segment_171939_0001.jpg",
+        "image_path": "/srv/deer-share/golden_clips_frames/person_day/person_segment_171939_0001.jpg",
+        "label_path": "/srv/deer-share/golden_clips_frames/labels/person_day/person_segment_171939_0001.txt",
+        "category": "person",
+        "lighting": "day",
+        "source": "golden_clips_frames",
+        "note": "golden_clips_frames:person_day"
+      },
+      {
+        "path": "/srv/deer-share/golden_clips_frames/person_day/person_segment_171939_0002.jpg",
+        "image_path": "/srv/deer-share/golden_clips_frames/person_day/person_segment_171939_0002.jpg",
+        "label_path": "/srv/deer-share/golden_clips_frames/labels/person_day/person_segment_171939_0002.txt",
+        "category": "person",
+        "lighting": "day",
+        "source": "golden_clips_frames",
+        "note": "golden_clips_frames:person_day"
+      },
+      {
+        "path": "/srv/deer-share/golden_clips_frames/person_day/person_segment_171939_0003.jpg",
+        "image_path": "/srv/deer-share/golden_clips_frames/person_day/person_segment_171939_0003.jpg",
+        "label_path": "/srv/deer-share/golden_clips_frames/labels/person_day/person_segment_171939_0003.txt",
+        "category": "person",
+        "lighting": "day",
+        "source": "golden_clips_frames",
+        "note": "golden_clips_frames:person_day"
+      },
+      {
+        "path": "/srv/deer-share/golden_clips_frames/person_day/person_segment_171939_0004.jpg",
+        "image_path": "/srv/deer-share/golden_clips_frames/person_day/person_segment_171939_0004.jpg",
+        "label_path": "/srv/deer-share/golden_clips_frames/labels/person_day/person_segment_171939_0004.txt",
+        "category": "person",
+        "lighting": "day",
+        "source": "golden_clips_frames",
+        "note": "golden_clips_frames:person_day"
+      },
+      {
+        "path": "/srv/deer-share/golden_clips_frames/person_day/person_segment_171939_0005.jpg",
+        "image_path": "/srv/deer-share/golden_clips_frames/person_day/person_segment_171939_0005.jpg",
+        "label_path": "/srv/deer-share/golden_clips_frames/labels/person_day/person_segment_171939_0005.txt",
+        "category": "person",
+        "lighting": "day",
+        "source": "golden_clips_frames",
+        "note": "golden_clips_frames:person_day"
+      },
+      {
+        "path": "/srv/deer-share/golden_clips_frames/person_day/person_segment_171939_0006.jpg",
+        "image_path": "/srv/deer-share/golden_clips_frames/person_day/person_segment_171939_0006.jpg",
+        "label_path": "/srv/deer-share/golden_clips_frames/labels/person_day/person_segment_171939_0006.txt",
+        "category": "person",
+        "lighting": "day",
+        "source": "golden_clips_frames",
+        "note": "golden_clips_frames:person_day"
+      },
+      {
+        "path": "/srv/deer-share/golden_clips_frames/person_day/person_segment_171939_0007.jpg",
+        "image_path": "/srv/deer-share/golden_clips_frames/person_day/person_segment_171939_0007.jpg",
+        "label_path": "/srv/deer-share/golden_clips_frames/labels/person_day/person_segment_171939_0007.txt",
+        "category": "person",
+        "lighting": "day",
+        "source": "golden_clips_frames",
+        "note": "golden_clips_frames:person_day"
+      },
+      {
+        "path": "/srv/deer-share/golden_clips_frames/person_day/person_segment_171939_0008.jpg",
+        "image_path": "/srv/deer-share/golden_clips_frames/person_day/person_segment_171939_0008.jpg",
+        "label_path": "/srv/deer-share/golden_clips_frames/labels/person_day/person_segment_171939_0008.txt",
+        "category": "person",
+        "lighting": "day",
+        "source": "golden_clips_frames",
+        "note": "golden_clips_frames:person_day"
       }
     ],
     "frame_interval": 15,
@@ -33,29 +170,148 @@
   "night": {
     "clips": [
       {
-        "path": "/srv/deer-share/golden_clips/buck/segment_052724",
+        "path": "/srv/deer-share/golden_clips_frames/deer_night/buck_segment_052724_0001.jpg",
+        "image_path": "/srv/deer-share/golden_clips_frames/deer_night/buck_segment_052724_0001.jpg",
+        "label_path": "/srv/deer-share/golden_clips_frames/labels/deer_night/buck_segment_052724_0001.txt",
         "category": "deer",
-        "note": "does"
+        "lighting": "night",
+        "source": "golden_clips_frames",
+        "note": "golden_clips_frames:deer_night"
       },
       {
-        "path": "/srv/deer-share/golden_clips/buck/night/2025-12-17_233117_buck_right",
+        "path": "/srv/deer-share/golden_clips_frames/deer_night/buck_segment_052724_0002.jpg",
+        "image_path": "/srv/deer-share/golden_clips_frames/deer_night/buck_segment_052724_0002.jpg",
+        "label_path": "/srv/deer-share/golden_clips_frames/labels/deer_night/buck_segment_052724_0002.txt",
         "category": "deer",
-        "note": "bucks"
+        "lighting": "night",
+        "source": "golden_clips_frames",
+        "note": "golden_clips_frames:deer_night"
       },
       {
-        "path": "/srv/deer-share/golden_clips/buck/night/2025-12-20_segment_052621_Deer_Night",
+        "path": "/srv/deer-share/golden_clips_frames/deer_night/buck_segment_052724_0003.jpg",
+        "image_path": "/srv/deer-share/golden_clips_frames/deer_night/buck_segment_052724_0003.jpg",
+        "label_path": "/srv/deer-share/golden_clips_frames/labels/deer_night/buck_segment_052724_0003.txt",
         "category": "deer",
-        "note": "does"
+        "lighting": "night",
+        "source": "golden_clips_frames",
+        "note": "golden_clips_frames:deer_night"
       },
       {
-        "path": "/srv/deer-share/golden_clips/buck/night/2025-12-18_segment_084901_Deer_far_right_of_camera_Begi",
+        "path": "/srv/deer-share/golden_clips_frames/deer_night/buck_segment_052724_0004.jpg",
+        "image_path": "/srv/deer-share/golden_clips_frames/deer_night/buck_segment_052724_0004.jpg",
+        "label_path": "/srv/deer-share/golden_clips_frames/labels/deer_night/buck_segment_052724_0004.txt",
         "category": "deer",
-        "note": "does"
+        "lighting": "night",
+        "source": "golden_clips_frames",
+        "note": "golden_clips_frames:deer_night"
       },
       {
-        "path": "/srv/deer-share/golden_clips/buck/night/2025-12-17_233220_bucks_crossing",
+        "path": "/srv/deer-share/golden_clips_frames/deer_night/buck_segment_052724_0005.jpg",
+        "image_path": "/srv/deer-share/golden_clips_frames/deer_night/buck_segment_052724_0005.jpg",
+        "label_path": "/srv/deer-share/golden_clips_frames/labels/deer_night/buck_segment_052724_0005.txt",
         "category": "deer",
-        "note": "bucks"
+        "lighting": "night",
+        "source": "golden_clips_frames",
+        "note": "golden_clips_frames:deer_night"
+      },
+      {
+        "path": "/srv/deer-share/golden_clips_frames/deer_night/buck_segment_052724_0006.jpg",
+        "image_path": "/srv/deer-share/golden_clips_frames/deer_night/buck_segment_052724_0006.jpg",
+        "label_path": "/srv/deer-share/golden_clips_frames/labels/deer_night/buck_segment_052724_0006.txt",
+        "category": "deer",
+        "lighting": "night",
+        "source": "golden_clips_frames",
+        "note": "golden_clips_frames:deer_night"
+      },
+      {
+        "path": "/srv/deer-share/golden_clips_frames/deer_night/buck_segment_052724_0007.jpg",
+        "image_path": "/srv/deer-share/golden_clips_frames/deer_night/buck_segment_052724_0007.jpg",
+        "label_path": "/srv/deer-share/golden_clips_frames/labels/deer_night/buck_segment_052724_0007.txt",
+        "category": "deer",
+        "lighting": "night",
+        "source": "golden_clips_frames",
+        "note": "golden_clips_frames:deer_night"
+      },
+      {
+        "path": "/srv/deer-share/golden_clips_frames/deer_night/buck_segment_052724_0008.jpg",
+        "image_path": "/srv/deer-share/golden_clips_frames/deer_night/buck_segment_052724_0008.jpg",
+        "label_path": "/srv/deer-share/golden_clips_frames/labels/deer_night/buck_segment_052724_0008.txt",
+        "category": "deer",
+        "lighting": "night",
+        "source": "golden_clips_frames",
+        "note": "golden_clips_frames:deer_night"
+      },
+      {
+        "path": "/srv/deer-share/golden_clips_frames/deer_night/buck_segment_052724_0009.jpg",
+        "image_path": "/srv/deer-share/golden_clips_frames/deer_night/buck_segment_052724_0009.jpg",
+        "label_path": "/srv/deer-share/golden_clips_frames/labels/deer_night/buck_segment_052724_0009.txt",
+        "category": "deer",
+        "lighting": "night",
+        "source": "golden_clips_frames",
+        "note": "golden_clips_frames:deer_night"
+      },
+      {
+        "path": "/srv/deer-share/golden_clips_frames/deer_night/buck_segment_052724_0010.jpg",
+        "image_path": "/srv/deer-share/golden_clips_frames/deer_night/buck_segment_052724_0010.jpg",
+        "label_path": "/srv/deer-share/golden_clips_frames/labels/deer_night/buck_segment_052724_0010.txt",
+        "category": "deer",
+        "lighting": "night",
+        "source": "golden_clips_frames",
+        "note": "golden_clips_frames:deer_night"
+      },
+      {
+        "path": "/srv/deer-share/nestcam_frames/person_night/Clip_12_25_2025_8_08_53_PM_Person_Night_f00000.jpg",
+        "image_path": "/srv/deer-share/nestcam_frames/person_night/Clip_12_25_2025_8_08_53_PM_Person_Night_f00000.jpg",
+        "label_path": "/srv/deer-share/nestcam_frames/labels/person_night/Clip_12_25_2025_8_08_53_PM_Person_Night_f00000.txt",
+        "category": "person",
+        "lighting": "night",
+        "source": "nestcam_frames",
+        "note": "nestcam_frames:person_night"
+      },
+      {
+        "path": "/srv/deer-share/nestcam_frames/person_night/Clip_12_25_2025_8_08_53_PM_Person_Night_f00015.jpg",
+        "image_path": "/srv/deer-share/nestcam_frames/person_night/Clip_12_25_2025_8_08_53_PM_Person_Night_f00015.jpg",
+        "label_path": "/srv/deer-share/nestcam_frames/labels/person_night/Clip_12_25_2025_8_08_53_PM_Person_Night_f00015.txt",
+        "category": "person",
+        "lighting": "night",
+        "source": "nestcam_frames",
+        "note": "nestcam_frames:person_night"
+      },
+      {
+        "path": "/srv/deer-share/nestcam_frames/person_night/Clip_12_25_2025_8_08_53_PM_Person_Night_f00030.jpg",
+        "image_path": "/srv/deer-share/nestcam_frames/person_night/Clip_12_25_2025_8_08_53_PM_Person_Night_f00030.jpg",
+        "label_path": "/srv/deer-share/nestcam_frames/labels/person_night/Clip_12_25_2025_8_08_53_PM_Person_Night_f00030.txt",
+        "category": "person",
+        "lighting": "night",
+        "source": "nestcam_frames",
+        "note": "nestcam_frames:person_night"
+      },
+      {
+        "path": "/srv/deer-share/nestcam_frames/person_night/Clip_12_25_2025_8_08_53_PM_Person_Night_f00045.jpg",
+        "image_path": "/srv/deer-share/nestcam_frames/person_night/Clip_12_25_2025_8_08_53_PM_Person_Night_f00045.jpg",
+        "label_path": "/srv/deer-share/nestcam_frames/labels/person_night/Clip_12_25_2025_8_08_53_PM_Person_Night_f00045.txt",
+        "category": "person",
+        "lighting": "night",
+        "source": "nestcam_frames",
+        "note": "nestcam_frames:person_night"
+      },
+      {
+        "path": "/srv/deer-share/nestcam_frames/person_night/Clip_12_25_2025_8_08_53_PM_Person_Night_f00060.jpg",
+        "image_path": "/srv/deer-share/nestcam_frames/person_night/Clip_12_25_2025_8_08_53_PM_Person_Night_f00060.jpg",
+        "label_path": "/srv/deer-share/nestcam_frames/labels/person_night/Clip_12_25_2025_8_08_53_PM_Person_Night_f00060.txt",
+        "category": "person",
+        "lighting": "night",
+        "source": "nestcam_frames",
+        "note": "nestcam_frames:person_night"
+      },
+      {
+        "path": "/srv/deer-share/nestcam_frames/person_night/Clip_12_25_2025_8_08_53_PM_Person_Night_f00075.jpg",
+        "image_path": "/srv/deer-share/nestcam_frames/person_night/Clip_12_25_2025_8_08_53_PM_Person_Night_f00075.jpg",
+        "label_path": "/srv/deer-share/nestcam_frames/labels/person_night/Clip_12_25_2025_8_08_53_PM_Person_Night_f00075.txt",
+        "category": "person",
+        "lighting": "night",
+        "source": "nestcam_frames",
+        "note": "nestcam_frames:person_night"
       }
     ],
     "frame_interval": 15,
