@@ -343,6 +343,7 @@ def build_eval_dataset(
         if class_id is None:
             continue
         if dry_run:
+            labeled_items += 1
             continue
         frames = extract_frames(
             video_path=video_path,
@@ -351,7 +352,10 @@ def build_eval_dataset(
             frame_interval=frame_interval,
             max_frames=max_frames,
         )
+        if not frames:
+            continue
         write_label_files(frames, labels_dir, class_id, bbox)
+        labeled_items += 1
 
     data_yaml = dataset_root / lighting / "data.yaml"
     if not dry_run:
