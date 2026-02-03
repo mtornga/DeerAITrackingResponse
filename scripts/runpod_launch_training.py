@@ -119,8 +119,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--jupyter-password", help="Jupyter password to set (JUPYTER_PASSWORD)")
     parser.add_argument(
         "--docker-args",
-        default="jupyter lab --allow-root --ip=0.0.0.0 --port=8888 --no-browser",
-        help="Docker args / start command",
+        default=None,
+        help="Docker args / start command (omit to use image default)",
     )
     parser.add_argument("--wait", action="store_true", help="Wait for pod to be running")
     parser.add_argument("--wait-timeout", type=int, default=900, help="Wait timeout in seconds")
@@ -155,17 +155,20 @@ def main() -> int:
     if args.jupyter_password and "JUPYTER_PASSWORD" not in env_vars:
         env_vars["JUPYTER_PASSWORD"] = args.jupyter_password
 
-    pod = runpod.create_pod(
-        name=name,
-        image_name=args.image,
-        gpu_type_id=args.gpu,
-        gpu_count=args.gpu_count,
-        volume_in_gb=args.volume_gb,
-        container_disk_in_gb=args.container_gb,
-        ports=args.ports,
-        env=env_vars,
-        docker_args=args.docker_args,
-    )
+    payload = {
+        "name": name,
+        "image_name": args.image,
+        "gpu_type_id": args.gpu,
+        "gpu_count": args.gpu_count,
+        "volume_in_gb": args.volume_gb,
+        "container_disk_in_gb": args.container_gb,
+        "ports": args.ports,
+        "env": env_vars,
+    }
+    if args.docker_args is not None:
+        payload["docker_args"] = args.docker_args
+
+    pod = runpod.create_pod(**payload)
 
     pod_id = pod.get("id") if isinstance(pod, dict) else None
     if not pod_id:
