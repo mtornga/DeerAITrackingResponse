@@ -317,7 +317,7 @@ def write_data_yaml(dataset_root: Path, lighting: str) -> Path:
     return data_path
 
 
-def build_train_command(
+def train_model(
     data_yaml: Path,
     base_model: str,
     project_dir: Path,
@@ -325,29 +325,25 @@ def build_train_command(
     epochs: int,
     batch: int,
     imgsz: int,
-) -> List[str]:
-    return [
-        sys.executable,
-        "-m",
-        "ultralytics",
-        "detect",
-        "train",
-        f"data={data_yaml}",
-        f"model={base_model}",
-        f"epochs={epochs}",
-        f"batch={batch}",
-        f"imgsz={imgsz}",
-        f"project={project_dir}",
-        f"name={name}",
-        "exist_ok=True",
-    ]
-
-
-def run_training(command: List[str], dry_run: bool) -> Tuple[int, str]:
+    dry_run: bool,
+) -> Optional[Path]:
     if dry_run:
-        return 0, ""
-    result = subprocess.run(command, capture_output=True, text=True)
-    return result.returncode, result.stdout + result.stderr
+        return None
+    from ultralytics import YOLO  # type: ignore
+
+    project_dir.mkdir(parents=True, exist_ok=True)
+    model = YOLO(base_model)
+    model.train(
+        data=str(data_yaml),
+        epochs=epochs,
+        batch=batch,
+        imgsz=imgsz,
+        project=str(project_dir),
+        name=name,
+        exist_ok=True,
+    )
+    best = project_dir / name / "weights" / "best.pt"
+    return best if best.exists() else None
 
 
 def register_agent_safe(
@@ -522,36 +518,74 @@ def main() -> int:
         name_day = f"yolov8n_wildlife_{run_id}_day"
         name_night = f"yolov8n_wildlife_{run_id}_night"
 
-        cmd_day = build_train_command(data_day, base_model, project_dir, name_day, epochs, batch, imgsz)
-        cmd_night = build_train_command(data_night, base_model, project_dir, name_night, epochs, batch, imgsz)
-        train_commands = {"day": cmd_day, "night": cmd_night}
+        train_commands = {
+            "day": [
+                "ultralytics",
+                f"data={data_day}",
+                f"model={base_model}",
+                f"epochs={epochs}",
+                f"batch={batch}",
+                f"imgsz={imgsz}",
+                f"project={project_dir}",
+                f"name={name_day}",
+            ],
+            "night": [
+                "ultralytics",
+                f"data={data_night}",
+                f"model={base_model}",
+                f"epochs={epochs}",
+                f"batch={batch}",
+                f"imgsz={imgsz}",
+                f"project={project_dir}",
+                f"name={name_night}",
+            ],
+        }
 
         if args.execute:
-            ret, output = run_training(cmd_day, dry_run=False)
-            if ret != 0:
-                errors.append(f"Day training failed (exit {ret})")
-                errors.append(output[-2000:])
-            ret, output = run_training(cmd_night, dry_run=False)
-            if ret != 0:
-                errors.append(f"Night training failed (exit {ret})")
-                errors.append(output[-2000:])
+            try:
+                best_day = train_model(
+                    data_yaml=data_day,
+                    base_model=base_model,
+                    project_dir=project_dir,
+                    name=name_day,
+                    epochs=epochs,
+                    batch=batch,
+                    imgsz=imgsz,
+                    dry_run=False,
+                )
+            except Exception as exc:
+                best_day = None
+                errors.append(f"Day training failed: {exc}")
 
-        if args.execute and not errors:
-            best_day = project_dir / name_day / "weights" / "best.pt"
-            best_night = project_dir / name_night / "weights" / "best.pt"
+            try:
+                best_night = train_model(
+                    data_yaml=data_night,
+                    base_model=base_model,
+                    project_dir=project_dir,
+                    name=name_night,
+                    epochs=epochs,
+                    batch=batch,
+                    imgsz=imgsz,
+                    dry_run=False,
+                )
+            except Exception as exc:
+                best_night = None
+                errors.append(f"Night training failed: {exc}")
+
             staging_dir.mkdir(parents=True, exist_ok=True)
-            if best_day.exists():
+            if best_day and best_day.exists():
                 target_day = staging_dir / f"{name_day}.pt"
                 shutil.copy2(best_day, target_day)
                 model_paths["day"] = str(target_day)
             else:
                 errors.append(f"Day best.pt not found: {best_day}")
-            if best_night.exists():
+            if best_night and best_night.exists():
                 target_night = staging_dir / f"{name_night}.pt"
                 shutil.copy2(best_night, target_night)
                 model_paths["night"] = str(target_night)
             else:
                 errors.append(f"Night best.pt not found: {best_night}")
+
             status = "complete" if not errors else "failed"
         else:
             status = "prepared"
