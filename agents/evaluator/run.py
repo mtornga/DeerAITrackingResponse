@@ -221,18 +221,17 @@ def resolve_candidate_models(trainer_log: Optional[Path]) -> Dict[str, str]:
     return {}
 
 
-def iter_eval_clips(eval_cfg: Dict[str, Any], lighting: str) -> List[Path]:
+def iter_eval_items(eval_cfg: Dict[str, Any], lighting: str) -> List[Dict[str, Any]]:
     clips = eval_cfg.get(lighting, {}).get("clips", []) if isinstance(eval_cfg.get(lighting), dict) else []
-    resolved: List[Path] = []
+    items: List[Dict[str, Any]] = []
     for clip in clips:
-        if not isinstance(clip, str) or not clip.strip():
-            continue
-        candidate = Path(clip)
-        if candidate.is_absolute():
-            resolved.append(candidate)
-        else:
-            resolved.append(Path(clip))
-    return resolved
+        if isinstance(clip, str):
+            items.append({"path": clip})
+        elif isinstance(clip, dict):
+            path = clip.get("path")
+            if isinstance(path, str) and path.strip():
+                items.append(clip)
+    return items
 
 
 def resolve_clip_path(clip: Path, golden_root: Path, lighting: str) -> Optional[Path]:
@@ -247,6 +246,18 @@ def resolve_clip_path(clip: Path, golden_root: Path, lighting: str) -> Optional[
     return None
 
 
+def infer_category_from_path(clip_path: Path, lighting: str) -> Optional[str]:
+    parts = clip_path.parts
+    if lighting in parts:
+        idx = parts.index(lighting)
+        if idx + 1 < len(parts) - 0 and idx + 1 < len(parts) - 0:
+            if idx + 1 < len(parts) - 1:
+                return parts[idx + 1]
+        if idx - 1 >= 0:
+            return parts[idx - 1]
+    return clip_path.parent.name
+
+
 def build_eval_dataset(
     golden_root: Path,
     eval_cfg: Dict[str, Any],
@@ -254,8 +265,8 @@ def build_eval_dataset(
     lighting: str,
     dry_run: bool,
 ) -> Path:
-    clips = iter_eval_clips(eval_cfg, lighting)
-    if not clips:
+    items = iter_eval_items(eval_cfg, lighting)
+    if not items:
         raise SystemExit(f"No eval clips configured for {lighting}")
 
     lighting_cfg = eval_cfg.get(lighting) if isinstance(eval_cfg.get(lighting), dict) else {}
@@ -268,7 +279,12 @@ def build_eval_dataset(
         images_dir.mkdir(parents=True, exist_ok=True)
         labels_dir.mkdir(parents=True, exist_ok=True)
 
-    for clip in clips:
+    for item in items:
+        raw_path = item.get("path")
+        if not isinstance(raw_path, str):
+            continue
+        normalized = raw_path.replace("/Users/marktornga/DeerShare", "/srv/deer-share")
+        clip = Path(normalized)
         clip_path = resolve_clip_path(clip, golden_root, lighting)
         if not clip_path:
             continue
@@ -281,8 +297,15 @@ def build_eval_dataset(
         bbox = extract_best_bbox(meta)
         if bbox is None:
             continue
-        category = clip_path.parent.name
-        class_id = 0 if category == "deer" else 1 if category == "person" else None
+        category = item.get("category")
+        if not isinstance(category, str):
+            category = infer_category_from_path(clip_path, lighting)
+        if category in {"deer", "buck", "doe", "animal"}:
+            class_id = 0
+        elif category == "person":
+            class_id = 1
+        else:
+            class_id = None
         if class_id is None:
             continue
         if dry_run:

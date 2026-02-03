@@ -1,11 +1,63 @@
 {
   "day": {
-    "clips": [],
+    "clips": [
+      {
+        "path": "/srv/deer-share/golden_clips/person/day/2025-12-17_segment_182011_clip",
+        "category": "person",
+        "note": "woman and child"
+      },
+      {
+        "path": "/srv/deer-share/golden_clips/person/day/2025-12-17_segment_184103_clip",
+        "category": "person",
+        "note": "two adults two children"
+      },
+      {
+        "path": "/srv/deer-share/golden_clips/person/day/2025-12-17_180013_person",
+        "category": "person",
+        "note": "mark near deck"
+      },
+      {
+        "path": "/srv/deer-share/golden_clips/person/day/2025-12-19_segment_143801_person",
+        "category": "person",
+        "note": "sunset mark end of clip"
+      },
+      {
+        "path": "/srv/deer-share/golden_clips/buck/day/2025-12-14_deer_test_daytime",
+        "category": "deer",
+        "note": "does"
+      }
+    ],
     "frame_interval": 15,
     "max_frames": 10
   },
   "night": {
-    "clips": [],
+    "clips": [
+      {
+        "path": "/srv/deer-share/golden_clips/buck/segment_052724",
+        "category": "deer",
+        "note": "does"
+      },
+      {
+        "path": "/srv/deer-share/golden_clips/buck/night/2025-12-17_233117_buck_right",
+        "category": "deer",
+        "note": "bucks"
+      },
+      {
+        "path": "/srv/deer-share/golden_clips/buck/night/2025-12-20_segment_052621_Deer_Night",
+        "category": "deer",
+        "note": "does"
+      },
+      {
+        "path": "/srv/deer-share/golden_clips/buck/night/2025-12-18_segment_084901_Deer_far_right_of_camera_Begi",
+        "category": "deer",
+        "note": "does"
+      },
+      {
+        "path": "/srv/deer-share/golden_clips/buck/night/2025-12-17_233220_bucks_crossing",
+        "category": "deer",
+        "note": "bucks"
+      }
+    ],
     "frame_interval": 15,
     "max_frames": 10
   }

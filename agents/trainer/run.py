@@ -172,14 +172,22 @@ def resolve_base_model(path_str: str, share_root: Path) -> str:
 
 def iter_clip_dirs(golden_root: Path, lighting: str, categories: Sequence[str]) -> List[Path]:
     clip_dirs: List[Path] = []
+    seen: set[Path] = set()
     for category in categories:
-        category_dir = golden_root / lighting / category
-        if not category_dir.exists():
-            continue
-        for clip_dir in sorted(category_dir.iterdir()):
-            if clip_dir.is_dir():
-                clip_dirs.append(clip_dir)
+        for base in (golden_root / lighting / category, golden_root / category / lighting):
+            if not base.exists():
+                continue
+            for clip_dir in sorted(base.iterdir()):
+                if clip_dir.is_dir() and clip_dir not in seen:
+                    seen.add(clip_dir)
+                    clip_dirs.append(clip_dir)
     return clip_dirs
+
+
+def resolve_category_for_clip(clip_dir: Path, lighting: str) -> Optional[str]:
+    if clip_dir.parent.name == lighting:
+        return clip_dir.parent.parent.name
+    return clip_dir.parent.name
 
 
 def include_negative_for_lighting(clip_dir: Path, lighting: str) -> bool:
@@ -231,8 +239,13 @@ def build_dataset(
             stats.skipped_missing_bbox += 1
             continue
 
-        category = clip_dir.parent.name
-        class_id = 0 if category == "deer" else 1 if category == "person" else None
+        category = resolve_category_for_clip(clip_dir, lighting)
+        if category in {"deer", "buck", "doe", "animal"}:
+            class_id = 0
+        elif category == "person":
+            class_id = 1
+        else:
+            class_id = None
         if class_id is None:
             continue
 
@@ -477,7 +490,7 @@ def main() -> int:
         golden_root=golden_root,
         dataset_root=dataset_root,
         lighting="day",
-        categories=["deer", "person"],
+        categories=["deer", "person", "buck", "doe"],
         max_clips=args.max_clips,
         val_split=val_split,
         frame_interval=frame_interval,
@@ -489,7 +502,7 @@ def main() -> int:
         golden_root=golden_root,
         dataset_root=dataset_root,
         lighting="night",
-        categories=["deer", "person"],
+        categories=["deer", "person", "buck", "doe"],
         max_clips=args.max_clips,
         val_split=val_split,
         frame_interval=frame_interval,
