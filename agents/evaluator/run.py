@@ -158,8 +158,15 @@ def load_env_vars() -> Dict[str, str]:
         stripped = line.strip()
         if not stripped or stripped.startswith("#") or "=" not in stripped:
             continue
+        if stripped.startswith("export "):
+            stripped = stripped[len("export "):]
+        if "=" not in stripped:
+            continue
         key, value = stripped.split("=", 1)
-        env_vars[key.strip()] = value.strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"\"", "'"}:
+            value = value[1:-1]
+        env_vars[key.strip()] = value
     return env_vars
 
 
