@@ -118,6 +118,13 @@ def find_image_for_label(label_path: Path) -> Optional[Path]:
             candidate = sibling.with_suffix(ext)
             if candidate.exists():
                 return candidate
+    if label_path.parent.parent.name == "labels":
+        images_dir = label_path.parent.parent.parent / "images" / label_path.parent.name
+        sibling = images_dir / label_path.name
+        for ext in IMAGE_EXTS:
+            candidate = sibling.with_suffix(ext)
+            if candidate.exists():
+                return candidate
     return None
 
 
