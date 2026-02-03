@@ -103,12 +103,25 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--name", help="Pod name (default: deer-train-YYYYMMDD-HHMMSS)")
     parser.add_argument("--gpu", help="GPU type (display name or id)")
     parser.add_argument("--gpu-count", type=int, default=1, help="GPU count")
-    parser.add_argument("--image", default="runpod/pytorch:latest", help="Docker image name")
+    parser.add_argument(
+        "--image",
+        default="runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04",
+        help="Docker image name",
+    )
     parser.add_argument("--container-gb", type=int, default=50, help="Container disk size in GB")
     parser.add_argument("--volume-gb", type=int, default=200, help="Volume size in GB")
-    parser.add_argument("--ports", default="22/tcp", help="Ports to expose (e.g. 22/tcp,8888/http)")
+    parser.add_argument(
+        "--ports",
+        default="8888/http,22/tcp",
+        help="Ports to expose (e.g. 22/tcp,8888/http)",
+    )
     parser.add_argument("--env", action="append", help="Env var (KEY=VALUE). Repeatable.")
-    parser.add_argument("--docker-args", default="sleep infinity", help="Docker args / start command")
+    parser.add_argument("--jupyter-password", help="Jupyter password to set (JUPYTER_PASSWORD)")
+    parser.add_argument(
+        "--docker-args",
+        default="jupyter lab --allow-root --ip=0.0.0.0 --port=8888 --no-browser",
+        help="Docker args / start command",
+    )
     parser.add_argument("--wait", action="store_true", help="Wait for pod to be running")
     parser.add_argument("--wait-timeout", type=int, default=900, help="Wait timeout in seconds")
     parser.add_argument("--wait-poll", type=int, default=10, help="Polling interval in seconds")
@@ -139,6 +152,8 @@ def main() -> int:
 
     name = args.name or datetime.now(UTC).strftime("deer-train-%Y%m%d-%H%M%S")
     env_vars = parse_env_pairs(args.env)
+    if args.jupyter_password and "JUPYTER_PASSWORD" not in env_vars:
+        env_vars["JUPYTER_PASSWORD"] = args.jupyter_password
 
     pod = runpod.create_pod(
         name=name,
