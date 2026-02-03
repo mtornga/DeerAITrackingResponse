@@ -80,8 +80,13 @@ def wait_for_pod(runpod: Any, pod_id: str, timeout_s: int, poll_s: int) -> Dict[
     start = datetime.now(UTC)
     while (datetime.now(UTC) - start).total_seconds() < timeout_s:
         pod = runpod.get_pod(pod_id)
-        runtime = pod.get("runtime", {}) if isinstance(pod, dict) else {}
-        status = runtime.get("status") or pod.get("status")
+        if not isinstance(pod, dict):
+            status = None
+        else:
+            runtime = pod.get("runtime")
+            if not isinstance(runtime, dict):
+                runtime = {}
+            status = runtime.get("status") or pod.get("status")
         if status and str(status).lower() in {"running", "ready"}:
             return pod
         time_left = timeout_s - int((datetime.now(UTC) - start).total_seconds())
