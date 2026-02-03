@@ -137,6 +137,12 @@ Skip a clip if any of the following is true:
 - Because Batch responses are async, mark `enrichment.status=pending` with a
   `batch_job_id`, then update to `complete` when results arrive.
 
+### Negative mining from rejects (snow/precip FPs)
+- Keep a capped subset of rejected clips as **negatives** for training when:
+  `triage=reject` AND `category=false_positive` AND tags include snow/rain/flies.
+- Route these to a `golden/negatives/snow` (or similar) bucket instead of dropping.
+- Cap per TC run (e.g., 10–20) to avoid over-weighting negatives.
+
 ### Snow/precip heuristic
 Compute `snow_score` from `meta.json` hits:
 - `small_box_ratio`: fraction of bboxes below a tiny area threshold.

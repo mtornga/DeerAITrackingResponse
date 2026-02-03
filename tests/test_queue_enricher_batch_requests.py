@@ -25,6 +25,7 @@ def test_build_vision_chat_body():
     assert body["response_format"]["type"] == "json_object"
     assert body["messages"][0]["content"][0]["type"] == "text"
     assert body["messages"][0]["content"][1]["type"] == "image_url"
+    assert body["messages"][0]["content"][1]["image_url"]["detail"] == "low"
 
 
 def test_batch_request_jsonl_line():

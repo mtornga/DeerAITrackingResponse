@@ -20,12 +20,21 @@ def build_vision_chat_body(
     model: str,
     prompt: str,
     image_urls: Sequence[str],
+    image_detail: str = "low",
     temperature: float = 0.2,
     max_tokens: int = 800,
 ) -> Dict[str, Any]:
     content: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
     for url in image_urls:
-        content.append({"type": "image_url", "image_url": {"url": url}})
+        content.append(
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": url,
+                    "detail": image_detail,
+                },
+            }
+        )
     return {
         "model": model,
         "temperature": temperature,

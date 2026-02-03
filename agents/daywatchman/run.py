@@ -54,6 +54,7 @@ def env_truthy(name: str, default: bool = False) -> bool:
 
 
 DEFAULT_PROGRESS_MAIL = env_truthy("DAYWATCHMAN_PROGRESS_MAIL", default=False)
+DEFAULT_QUEUE_ENRICHER_SPAWN = env_truthy("DAYWATCHMAN_QUEUE_ENRICHER_SPAWN", default=True)
 
 ANALYSIS_DIR = Path(os.environ.get("DAYWATCHMAN_ANALYSIS_DIR", "/srv/deer-share/runs/live/analysis"))
 DETECTIONS_DIR = Path(os.environ.get("DAYWATCHMAN_DETECTIONS_DIR", "/srv/deer-share/runs/live/detections"))
@@ -1100,6 +1101,27 @@ def send_queue_enricher_trigger(
     )
 
 
+def spawn_queue_enricher(repo_root: Path, errors: List[str]) -> None:
+    script = repo_root / "agents" / "queue-enricher" / "run.sh"
+    if not script.exists():
+        errors.append(f"Queue Enricher script not found: {script}")
+        return
+    logs_dir = repo_root / "runs" / "logs" / "queue_enricher"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_path = logs_dir / f"queue-enricher-spawn-{datetime.now().strftime('%Y%m%d-%H%M%S')}.log"
+    try:
+        with log_path.open("ab") as handle:
+            subprocess.Popen(
+                [str(script)],
+                cwd=repo_root,
+                stdout=handle,
+                stderr=handle,
+                start_new_session=True,
+            )
+    except Exception as exc:
+        errors.append(f"Failed to spawn Queue Enricher: {exc}")
+
+
 def register_agent_safe(
     client: Optional[MCPClient],
     project_key: str,
@@ -1279,6 +1301,8 @@ def run_patrol(args: argparse.Namespace) -> int:
         skip_mail=skip_mail,
         errors=errors,
     )
+    if queue_report.queued and args.queue_enricher_spawn and not args.dry_run:
+        spawn_queue_enricher(repo_root, errors)
 
     pushover_report = collect_pushover_report(DEFAULT_DETECTOR_LOG, start_time, errors)
 
@@ -1409,6 +1433,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--queue-enricher-recipients",
         default=os.environ.get("DAYWATCHMAN_QUEUE_ENRICHER_TO"),
         help="Comma-separated MCP Agent Mail recipients for queue enricher",
+    )
+    parser.add_argument(
+        "--queue-enricher-spawn",
+        action="store_true",
+        default=DEFAULT_QUEUE_ENRICHER_SPAWN,
+        help="Spawn the queue enricher after queueing clips",
+    )
+    parser.add_argument(
+        "--no-queue-enricher-spawn",
+        action="store_false",
+        dest="queue_enricher_spawn",
+        help="Do not spawn the queue enricher",
     )
     return parser
 

@@ -321,6 +321,12 @@ If `Added this run` is greater than 0, send a queue-enricher trigger message.
 
 Skip this step if `Added this run` is 0.
 
+After sending the message, spawn the Queue Enricher asynchronously:
+```bash
+cd /home/mtornga/projects/DeerAITrackingResponse
+nohup ./agents/queue-enricher/run.sh >> runs/logs/queue_enricher/queue-enricher-spawn.log 2>&1 &
+```
+
 ---
 
 ## Step 4: Write Digest
