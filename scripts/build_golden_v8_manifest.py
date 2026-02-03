@@ -69,9 +69,13 @@ def _tokenize(parts: List[str]) -> List[str]:
     return tokens
 
 
+def _tail_tokens(path: Path, depth: int = 4) -> List[str]:
+    parts = [p.lower() for p in path.parts[-depth:]]
+    return _tokenize(parts)
+
+
 def infer_lighting(path: Path) -> Optional[str]:
-    parts = [p.lower() for p in path.parts]
-    tokens = _tokenize(parts)
+    tokens = _tail_tokens(path)
     if "night" in tokens or "ir" in tokens:
         return "night"
     if "day" in tokens or "daytime" in tokens:
@@ -80,19 +84,17 @@ def infer_lighting(path: Path) -> Optional[str]:
 
 
 def infer_class(path: Path) -> Optional[str]:
-    parts = [p.lower() for p in path.parts]
-    tokens = _tokenize(parts)
-    for token in tokens:
-        if token in {"buck", "doe", "deer", "animal"}:
-            return "deer"
-        if token in {"person", "people", "human"}:
-            return "person"
-        if token in {"other_wildlife", "wildlife"}:
-            return "other_wildlife"
-        if token in {"false_positive", "false"}:
-            return "false_positive"
-        if token in {"unknown", "misc"}:
-            return "unknown"
+    tokens = _tail_tokens(path)
+    if any(token in {"person", "people", "human"} for token in tokens):
+        return "person"
+    if any(token in {"buck", "doe", "deer", "animal"} for token in tokens):
+        return "deer"
+    if any(token in {"other_wildlife", "wildlife"} for token in tokens):
+        return "other_wildlife"
+    if any(token in {"false_positive", "false"} for token in tokens):
+        return "false_positive"
+    if any(token in {"unknown", "misc"} for token in tokens):
+        return "unknown"
     return None
 
 
