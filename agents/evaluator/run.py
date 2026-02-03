@@ -348,8 +348,16 @@ def eval_model(model_path: str, data_yaml: Path, device: str, dry_run: bool) -> 
     results = model.val(data=str(data_yaml), device=device)
     metrics = Metrics()
     if hasattr(results, "box"):
-        metrics.map50 = getattr(results.box, "map50", None)
-        metrics.recall = getattr(results.box, "mr", None)
+        map50 = getattr(results.box, "map50", None)
+        recall = getattr(results.box, "mr", None)
+        try:
+            metrics.map50 = float(map50) if map50 is not None else None
+        except (TypeError, ValueError):
+            metrics.map50 = None
+        try:
+            metrics.recall = float(recall) if recall is not None else None
+        except (TypeError, ValueError):
+            metrics.recall = None
     return metrics
 
 
@@ -502,7 +510,7 @@ def main() -> int:
                 return False
             return cand.recall >= base.recall + min_recall_delta and cand.map50 >= base.map50 + min_map_gain
 
-        gate_passed = passes(cand_day, base_day) and passes(cand_night, base_night)
+        gate_passed = bool(passes(cand_day, base_day) and passes(cand_night, base_night))
 
     status = "complete" if gate_passed and not errors else "failed"
     if args.dry_run:
