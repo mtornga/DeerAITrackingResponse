@@ -9,6 +9,7 @@ Outputs candidate models into /srv/deer-share/models/staging/.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -85,6 +86,8 @@ class RunSummary:
     finished_at: str
     golden_root: str
     dataset_root: str
+    dataset_mode: str
+    dataset_manifest_hash: Optional[str]
     staging_dir: str
     model_paths: Dict[str, str]
     train_commands: Dict[str, List[str]]
@@ -153,6 +156,24 @@ def load_training_config() -> Dict[str, Any]:
     config_path = REPO_ROOT / "configs" / "training_loop.json"
     payload = load_json(config_path)
     return payload or {}
+
+
+def file_hash(path: Path) -> Optional[str]:
+    if not path.exists():
+        return None
+    data = path.read_bytes()
+    return hashlib.md5(data).hexdigest()
+
+
+def dataset_stats_from_root(dataset_root: Path, lighting: str) -> DatasetStats:
+    stats = DatasetStats(lighting=lighting)
+    images_train = [p for p in (dataset_root / lighting / "images" / "train").glob("*") if p.is_file()]
+    images_val = [p for p in (dataset_root / lighting / "images" / "val").glob("*") if p.is_file()]
+    labels_train = [p for p in (dataset_root / lighting / "labels" / "train").glob("*.txt") if p.is_file()]
+    labels_val = [p for p in (dataset_root / lighting / "labels" / "val").glob("*.txt") if p.is_file()]
+    stats.frames_written = len(images_train) + len(images_val)
+    stats.labels_written = len(labels_train) + len(labels_val)
+    return stats
 
 
 def resolve_base_model(path_str: str, share_root: Path) -> str:
@@ -432,6 +453,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--run-id", help="Override run id (default: TR-YYYYMMDD-HHMMSS)")
     parser.add_argument("--dry-run", action="store_true", help="Plan without writing files or training")
     parser.add_argument("--execute", action="store_true", help="Execute training locally")
+    parser.add_argument("--dataset-root", help="Use prebuilt golden frames dataset root")
     parser.add_argument("--max-clips", type=int, help="Limit clips per lighting")
     parser.add_argument("--frame-interval", type=int, help="Frame interval for extraction")
     parser.add_argument("--max-frames", type=int, help="Max frames per clip")
@@ -464,7 +486,6 @@ def main() -> int:
         raise SystemExit(f"Golden clips directory not found: {golden_root}")
 
     run_id = args.run_id or datetime.now(UTC).strftime("TR-%Y%m%d-%H%M%S")
-    dataset_root = share_root / "training_datasets" / run_id
     staging_dir = share_root / "models" / "staging"
 
     val_split = args.val_split if args.val_split is not None else float(config.get("val_split", 0.15))
@@ -482,113 +503,148 @@ def main() -> int:
     errors: List[str] = []
     started_at = datetime.now(UTC)
 
-    stats_day = build_dataset(
-        golden_root=golden_root,
-        dataset_root=dataset_root,
-        lighting="day",
-        categories=["deer", "person", "buck", "doe"],
-        max_clips=args.max_clips,
-        val_split=val_split,
-        frame_interval=frame_interval,
-        max_frames=max_frames,
-        include_negatives=include_negatives,
-        dry_run=args.dry_run,
-    )
-    stats_night = build_dataset(
-        golden_root=golden_root,
-        dataset_root=dataset_root,
-        lighting="night",
-        categories=["deer", "person", "buck", "doe"],
-        max_clips=args.max_clips,
-        val_split=val_split,
-        frame_interval=frame_interval,
-        max_frames=max_frames,
-        include_negatives=include_negatives,
-        dry_run=args.dry_run,
-    )
+    dataset_mode = "clips"
+    dataset_manifest_hash: Optional[str] = None
+    dataset_root = share_root / "training_datasets" / run_id
+    data_day: Optional[Path] = None
+    data_night: Optional[Path] = None
+
+    dataset_root_override = args.dataset_root or config.get("golden_frames_root")
+    if dataset_root_override:
+        candidate = Path(str(dataset_root_override))
+        if not candidate.is_absolute():
+            candidate = share_root / candidate
+        day_yaml = candidate / "day.yaml"
+        night_yaml = candidate / "night.yaml"
+        if day_yaml.exists() and night_yaml.exists():
+            dataset_root = candidate
+            dataset_mode = "frames"
+            dataset_manifest_hash = file_hash(REPO_ROOT / "configs" / "golden_v8_manifest.json")
+            stats_day = dataset_stats_from_root(dataset_root, "day")
+            stats_night = dataset_stats_from_root(dataset_root, "night")
+            data_day = day_yaml
+            data_night = night_yaml
+        else:
+            if args.dataset_root:
+                errors.append(f"Dataset root missing day/night yaml: {candidate}")
+            else:
+                log(f"WARN: Dataset root missing day/night yaml: {candidate}; falling back to clip extraction.")
+
+    if dataset_mode == "clips":
+        stats_day = build_dataset(
+            golden_root=golden_root,
+            dataset_root=dataset_root,
+            lighting="day",
+            categories=["deer", "person", "buck", "doe"],
+            max_clips=args.max_clips,
+            val_split=val_split,
+            frame_interval=frame_interval,
+            max_frames=max_frames,
+            include_negatives=include_negatives,
+            dry_run=args.dry_run,
+        )
+        stats_night = build_dataset(
+            golden_root=golden_root,
+            dataset_root=dataset_root,
+            lighting="night",
+            categories=["deer", "person", "buck", "doe"],
+            max_clips=args.max_clips,
+            val_split=val_split,
+            frame_interval=frame_interval,
+            max_frames=max_frames,
+            include_negatives=include_negatives,
+            dry_run=args.dry_run,
+        )
 
     model_paths: Dict[str, str] = {}
     train_commands: Dict[str, List[str]] = {}
 
     status = "prepared"
     if not args.dry_run:
-        data_day = write_data_yaml(dataset_root, "day")
-        data_night = write_data_yaml(dataset_root, "night")
+        if dataset_mode == "clips":
+            data_day = write_data_yaml(dataset_root, "day")
+            data_night = write_data_yaml(dataset_root, "night")
+        if data_day is None or data_night is None:
+            errors.append("Missing dataset YAMLs; cannot train.")
 
         name_day = f"yolov8n_wildlife_{run_id}_day"
         name_night = f"yolov8n_wildlife_{run_id}_night"
 
-        train_commands = {
-            "day": [
-                "ultralytics",
-                f"data={data_day}",
-                f"model={base_model}",
-                f"epochs={epochs}",
-                f"batch={batch}",
-                f"imgsz={imgsz}",
-                f"project={project_dir}",
-                f"name={name_day}",
-            ],
-            "night": [
-                "ultralytics",
-                f"data={data_night}",
-                f"model={base_model}",
-                f"epochs={epochs}",
-                f"batch={batch}",
-                f"imgsz={imgsz}",
-                f"project={project_dir}",
-                f"name={name_night}",
-            ],
-        }
-
-        if args.execute:
-            try:
-                best_day = train_model(
-                    data_yaml=data_day,
-                    base_model=base_model,
-                    project_dir=project_dir,
-                    name=name_day,
-                    epochs=epochs,
-                    batch=batch,
-                    imgsz=imgsz,
-                    dry_run=False,
-                )
-            except Exception as exc:
-                best_day = None
-                errors.append(f"Day training failed: {exc}")
-
-            try:
-                best_night = train_model(
-                    data_yaml=data_night,
-                    base_model=base_model,
-                    project_dir=project_dir,
-                    name=name_night,
-                    epochs=epochs,
-                    batch=batch,
-                    imgsz=imgsz,
-                    dry_run=False,
-                )
-            except Exception as exc:
-                best_night = None
-                errors.append(f"Night training failed: {exc}")
-
-            staging_dir.mkdir(parents=True, exist_ok=True)
-            if best_day and best_day.exists():
-                target_day = staging_dir / f"{name_day}.pt"
-                shutil.copy2(best_day, target_day)
-                model_paths["day"] = str(target_day)
-            else:
-                errors.append(f"Day best.pt not found: {best_day}")
-            if best_night and best_night.exists():
-                target_night = staging_dir / f"{name_night}.pt"
-                shutil.copy2(best_night, target_night)
-                model_paths["night"] = str(target_night)
-            else:
-                errors.append(f"Night best.pt not found: {best_night}")
-
-            status = "complete" if not errors else "failed"
+        if data_day is None or data_night is None:
+            errors.append("Dataset YAMLs missing; aborting training.")
+            status = "failed"
         else:
-            status = "prepared"
+            train_commands = {
+                "day": [
+                    "ultralytics",
+                    f"data={data_day}",
+                    f"model={base_model}",
+                    f"epochs={epochs}",
+                    f"batch={batch}",
+                    f"imgsz={imgsz}",
+                    f"project={project_dir}",
+                    f"name={name_day}",
+                ],
+                "night": [
+                    "ultralytics",
+                    f"data={data_night}",
+                    f"model={base_model}",
+                    f"epochs={epochs}",
+                    f"batch={batch}",
+                    f"imgsz={imgsz}",
+                    f"project={project_dir}",
+                    f"name={name_night}",
+                ],
+            }
+
+            if args.execute:
+                try:
+                    best_day = train_model(
+                        data_yaml=data_day,
+                        base_model=base_model,
+                        project_dir=project_dir,
+                        name=name_day,
+                        epochs=epochs,
+                        batch=batch,
+                        imgsz=imgsz,
+                        dry_run=False,
+                    )
+                except Exception as exc:
+                    best_day = None
+                    errors.append(f"Day training failed: {exc}")
+
+                try:
+                    best_night = train_model(
+                        data_yaml=data_night,
+                        base_model=base_model,
+                        project_dir=project_dir,
+                        name=name_night,
+                        epochs=epochs,
+                        batch=batch,
+                        imgsz=imgsz,
+                        dry_run=False,
+                    )
+                except Exception as exc:
+                    best_night = None
+                    errors.append(f"Night training failed: {exc}")
+
+                staging_dir.mkdir(parents=True, exist_ok=True)
+                if best_day and best_day.exists():
+                    target_day = staging_dir / f"{name_day}.pt"
+                    shutil.copy2(best_day, target_day)
+                    model_paths["day"] = str(target_day)
+                else:
+                    errors.append(f"Day best.pt not found: {best_day}")
+                if best_night and best_night.exists():
+                    target_night = staging_dir / f"{name_night}.pt"
+                    shutil.copy2(best_night, target_night)
+                    model_paths["night"] = str(target_night)
+                else:
+                    errors.append(f"Night best.pt not found: {best_night}")
+
+                status = "complete" if not errors else "failed"
+            else:
+                status = "prepared"
     else:
         status = "dry_run"
 
@@ -601,6 +657,8 @@ def main() -> int:
         finished_at=format_utc(finished_at),
         golden_root=str(golden_root),
         dataset_root=str(dataset_root),
+        dataset_mode=dataset_mode,
+        dataset_manifest_hash=dataset_manifest_hash,
         staging_dir=str(staging_dir),
         model_paths=model_paths,
         train_commands={k: [str(x) for x in v] for k, v in train_commands.items()},

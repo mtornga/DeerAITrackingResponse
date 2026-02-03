@@ -8,6 +8,7 @@ Runs Training Coordinator -> Trainer -> Evaluator -> Deployer when queue thresho
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -45,7 +46,7 @@ try:
 except Exception:
     pass
 
-from training_loop_utils import load_json
+from training_loop_utils import load_json, resolve_share_root
 
 
 DEFAULT_AGENT_NAME = os.environ.get("TRAINING_LOOP_AGENT", "BrightCedar")
@@ -136,6 +137,34 @@ def load_training_config() -> Dict[str, Any]:
     config_path = REPO_ROOT / "configs" / "training_loop.json"
     payload = load_json(config_path)
     return payload or {}
+
+
+def hash_file(path: Path) -> Optional[str]:
+    if not path.exists():
+        return None
+    return hashlib.md5(path.read_bytes()).hexdigest()
+
+
+def golden_frames_stale(dataset_root: Path, manifest_path: Path, golden_manifest: Path) -> bool:
+    if not dataset_root.exists():
+        return True
+    if not (dataset_root / "day.yaml").exists() or not (dataset_root / "night.yaml").exists():
+        return True
+    meta_path = dataset_root / ".build_meta.json"
+    meta = load_json(meta_path)
+    if not meta:
+        return True
+    if meta.get("manifest_hash") != hash_file(manifest_path):
+        return True
+    if golden_manifest.exists():
+        meta_mtime = meta.get("golden_clips_manifest_mtime")
+        try:
+            meta_mtime_val = float(meta_mtime) if meta_mtime is not None else 0.0
+        except (TypeError, ValueError):
+            meta_mtime_val = 0.0
+        if meta_mtime_val < golden_manifest.stat().st_mtime:
+            return True
+    return False
 
 
 def count_queue(queue_dir: Path) -> int:
@@ -257,6 +286,12 @@ def main() -> int:
     queue_dir = Path(args.queue_dir)
     queue_count = count_queue(queue_dir)
 
+    share_root = resolve_share_root(args.share_root)
+    golden_frames_root = config.get("golden_frames_root", "golden_frames_v8")
+    dataset_root = share_root / str(golden_frames_root)
+    manifest_path = REPO_ROOT / "configs" / "golden_v8_manifest.json"
+    golden_manifest = share_root / "golden_clips" / "manifest.json"
+
     run_id = datetime.now(UTC).strftime("LOOP-%Y%m%d-%H%M%S")
     started_at = datetime.now(UTC)
     errors: List[str] = []
@@ -284,6 +319,54 @@ def main() -> int:
         )
         if rc != 0:
             status = "failed"
+
+    if status == "running":
+        if golden_frames_stale(dataset_root, manifest_path, golden_manifest):
+            manifest_cmd = [sys.executable, "scripts/build_golden_v8_manifest.py"]
+            frames_cmd = [sys.executable, "scripts/build_golden_v8_frames.py"]
+            if args.dry_run:
+                manifest_cmd.append("--dry-run")
+                frames_cmd.append("--dry-run")
+            rc = run_step(manifest_cmd)
+            steps.append(
+                StepResult(
+                    name="golden-manifest",
+                    status="ok" if rc == 0 else "failed",
+                    return_code=rc,
+                    log_path=None,
+                )
+            )
+            if rc != 0:
+                status = "failed"
+            if status == "running":
+                rc = run_step(frames_cmd)
+                steps.append(
+                    StepResult(
+                        name="golden-frames",
+                        status="ok" if rc == 0 else "failed",
+                        return_code=rc,
+                        log_path=None,
+                    )
+                )
+                if rc != 0:
+                    status = "failed"
+        else:
+            steps.append(
+                StepResult(
+                    name="golden-manifest",
+                    status="skipped",
+                    return_code=0,
+                    log_path=None,
+                )
+            )
+            steps.append(
+                StepResult(
+                    name="golden-frames",
+                    status="skipped",
+                    return_code=0,
+                    log_path=None,
+                )
+            )
 
     if status == "running":
         trainer_cmd = [sys.executable, "agents/trainer/run.py"]

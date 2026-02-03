@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -76,6 +77,7 @@ class EvalSummary:
     candidate_models: Dict[str, str]
     baseline_models: Dict[str, str]
     metrics: Dict[str, Dict[str, Dict[str, Optional[float]]]]
+    coverage: Dict[str, Dict[str, float]]
     gate_passed: bool
     errors: List[str] = field(default_factory=list)
     log_path: Optional[str] = None
@@ -271,7 +273,7 @@ def build_eval_dataset(
     dataset_root: Path,
     lighting: str,
     dry_run: bool,
-) -> Path:
+) -> Tuple[Path, int, int]:
     items = iter_eval_items(eval_cfg, lighting)
     if not items:
         raise SystemExit(f"No eval clips configured for {lighting}")
@@ -286,10 +288,35 @@ def build_eval_dataset(
         images_dir.mkdir(parents=True, exist_ok=True)
         labels_dir.mkdir(parents=True, exist_ok=True)
 
+    total_items = 0
+    labeled_items = 0
+
     for item in items:
+        total_items += 1
         raw_path = item.get("path")
         if not isinstance(raw_path, str):
             continue
+        label_path_value = item.get("label_path")
+        image_path_value = item.get("image_path")
+        if isinstance(label_path_value, str) and isinstance(image_path_value, str):
+            label_path_str = label_path_value.replace("/Users/marktornga/DeerShare", "/srv/deer-share")
+            image_path_str = image_path_value.replace("/Users/marktornga/DeerShare", "/srv/deer-share")
+            label_path = Path(label_path_str)
+            image_path = Path(image_path_str)
+            if not label_path.is_absolute():
+                label_path = golden_root / label_path
+            if not image_path.is_absolute():
+                image_path = golden_root / image_path
+            if label_path.exists() and image_path.exists():
+                labeled_items += 1
+                if not dry_run:
+                    images_dir.mkdir(parents=True, exist_ok=True)
+                    labels_dir.mkdir(parents=True, exist_ok=True)
+                    dest_image = images_dir / image_path.name
+                    dest_label = labels_dir / f"{image_path.stem}.txt"
+                    shutil.copy2(image_path, dest_image)
+                    shutil.copy2(label_path, dest_label)
+                continue
         normalized = raw_path.replace("/Users/marktornga/DeerShare", "/srv/deer-share")
         clip = Path(normalized)
         clip_path = resolve_clip_path(clip, golden_root, lighting)
@@ -336,7 +363,7 @@ def build_eval_dataset(
             "  0: deer\n"
             "  1: person\n"
         )
-    return data_yaml
+    return data_yaml, total_items, labeled_items
 
 
 def eval_model(model_path: str, data_yaml: Path, device: str, dry_run: bool) -> Metrics:
@@ -420,6 +447,14 @@ def send_summary_safe(
     body_lines.append("Baseline models:")
     for lighting, path in summary.baseline_models.items():
         body_lines.append(f"- {lighting}: {path}")
+    if summary.coverage:
+        body_lines.append("")
+        body_lines.append("Eval coverage:")
+        for lighting, stats in summary.coverage.items():
+            labeled = stats.get("labeled", 0.0)
+            total = stats.get("total", 0.0)
+            ratio = stats.get("ratio", 0.0)
+            body_lines.append(f"- {lighting}: {labeled}/{total} ({ratio:.2f})")
 
     try:
         client.call_tool(
@@ -461,6 +496,7 @@ def main() -> int:
     eval_cfg = load_eval_sets()
     min_map_gain = float(config.get("min_map50_gain", 0.01))
     min_recall_delta = float(config.get("min_recall_delta", 0.0))
+    min_coverage = float(config.get("golden_min_coverage", 0.8))
 
     share_root = resolve_share_root(args.share_root)
     golden_root = share_root / "golden_clips"
@@ -483,11 +519,34 @@ def main() -> int:
         errors.append("Baseline models missing day/night paths")
 
     metrics: Dict[str, Dict[str, Dict[str, Optional[float]]]] = {}
+    coverage: Dict[str, Dict[str, float]] = {}
     gate_passed = False
 
     if not errors:
-        data_day = build_eval_dataset(golden_root, eval_cfg, eval_root, "day", args.dry_run)
-        data_night = build_eval_dataset(golden_root, eval_cfg, eval_root, "night", args.dry_run)
+        data_day, total_day, labeled_day = build_eval_dataset(golden_root, eval_cfg, eval_root, "day", args.dry_run)
+        data_night, total_night, labeled_night = build_eval_dataset(
+            golden_root,
+            eval_cfg,
+            eval_root,
+            "night",
+            args.dry_run,
+        )
+
+        coverage = {
+            "day": {
+                "total": float(total_day),
+                "labeled": float(labeled_day),
+                "ratio": float(labeled_day) / float(total_day) if total_day else 0.0,
+            },
+            "night": {
+                "total": float(total_night),
+                "labeled": float(labeled_night),
+                "ratio": float(labeled_night) / float(total_night) if total_night else 0.0,
+            },
+        }
+
+        if coverage["day"]["ratio"] < min_coverage or coverage["night"]["ratio"] < min_coverage:
+            errors.append("Eval coverage below threshold")
 
         cand_day = eval_model(candidate_models["day"], data_day, args.device, args.dry_run)
         base_day = eval_model(baseline_models["day"], data_day, args.device, args.dry_run)
@@ -511,6 +570,8 @@ def main() -> int:
             return cand.recall >= base.recall + min_recall_delta and cand.map50 >= base.map50 + min_map_gain
 
         gate_passed = bool(passes(cand_day, base_day) and passes(cand_night, base_night))
+        if errors:
+            gate_passed = False
 
     status = "complete" if gate_passed and not errors else "failed"
     if args.dry_run:
@@ -526,6 +587,7 @@ def main() -> int:
         candidate_models=candidate_models,
         baseline_models=baseline_models,
         metrics=metrics,
+        coverage=coverage,
         gate_passed=gate_passed,
         errors=errors,
     )
