@@ -194,6 +194,15 @@ def append_review(log_path: Path, entry: ImageEntry, status: str, note: str) -> 
         handle.write(json.dumps(payload) + "\n")
 
 
+def trigger_rerun() -> None:
+    if hasattr(st, "rerun"):
+        st.rerun()
+        return
+    if hasattr(st, "experimental_rerun"):
+        st.experimental_rerun()
+        return
+
+
 def load_review_stats(log_path: Path) -> Dict[str, int]:
     stats = {status: 0 for status in REVIEW_STATUSES}
     if not log_path.exists():
@@ -306,15 +315,15 @@ def main() -> None:
         if action_cols[0].button("Mark OK"):
             append_review(log_path, current, "ok", note)
             st.cache_data.clear()
-            st.experimental_rerun()
+            trigger_rerun()
         if action_cols[1].button("Flag Bad"):
             append_review(log_path, current, "bad_label", note)
             st.cache_data.clear()
-            st.experimental_rerun()
+            trigger_rerun()
         if action_cols[2].button("Uncertain"):
             append_review(log_path, current, "uncertain", note)
             st.cache_data.clear()
-            st.experimental_rerun()
+            trigger_rerun()
 
         stats = load_review_stats(log_path)
         st.markdown("**Review stats**")
