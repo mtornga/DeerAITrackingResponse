@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "source": "cvat_verified",
+  "day": {
+    "clips": []
+  },
+  "night": {
+    "clips": []
+  }
+}

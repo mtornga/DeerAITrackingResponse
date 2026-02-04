@@ -7,7 +7,7 @@
   "frame_interval": 15,
   "max_frames": 20,
   "include_negatives": true,
-  "golden_frames_root": "golden_frames_v8",
+  "golden_frames_root": "golden_frames_v9",
   "golden_sources": [
     "nestcam_frames",
     "golden_clips_frames",
@@ -15,15 +15,14 @@
   ],
   "golden_min_coverage": 0.8,
   "golden_caps": {
-    "day_deer": 1200,
-    "night_deer": 1400,
-    "day_person": 900,
+    "day_deer": 600,
+    "night_deer": 1500,
+    "day_person": 400,
     "night_person": 150,
-    "other_wildlife": 200,
-    "false_positive": 200,
-    "negatives_snow": 200,
-    "unknown": 100
+    "day_background": 200,
+    "night_background": 200
   },
+  "eval_sets_config": "configs/eval_sets_v9.json",
   "trainer": {
     "epochs": 80,
     "batch": 8,

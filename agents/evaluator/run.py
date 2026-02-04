@@ -145,7 +145,24 @@ def load_training_config() -> Dict[str, Any]:
     return payload or {}
 
 
-def load_eval_sets() -> Dict[str, Any]:
+def has_eval_items(payload: Dict[str, Any]) -> bool:
+    day = payload.get("day", {})
+    night = payload.get("night", {})
+    if isinstance(day, dict) and isinstance(night, dict):
+        return bool(day.get("clips")) or bool(night.get("clips"))
+    return False
+
+
+def load_eval_sets(config: Dict[str, Any]) -> Dict[str, Any]:
+    preferred = config.get("eval_sets_config")
+    if isinstance(preferred, str):
+        preferred_path = Path(preferred)
+        if not preferred_path.is_absolute():
+            preferred_path = REPO_ROOT / preferred_path
+        payload = load_json(preferred_path)
+        if payload and has_eval_items(payload):
+            return payload
+
     config_path = REPO_ROOT / "configs" / "eval_sets.json"
     payload = load_json(config_path)
     return payload or {}
@@ -497,7 +514,7 @@ def main() -> int:
     args = build_arg_parser().parse_args()
 
     config = load_training_config()
-    eval_cfg = load_eval_sets()
+    eval_cfg = load_eval_sets(config)
     min_map_gain = float(config.get("min_map50_gain", 0.01))
     min_recall_delta = float(config.get("min_recall_delta", 0.0))
     min_coverage = float(config.get("golden_min_coverage", 0.8))
